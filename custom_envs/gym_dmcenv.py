@@ -4,9 +4,9 @@ os.environ["MUJOCO_GL"] = "egl"
 import gymnasium as gym
 
 # from dm_control.locomotion.walkers import Rat
-from custom_envs.dmc_walker import Rat
+from envs.dmc_walker import Rat
 import dm_control.locomotion.arenas as arenas
-import custom_envs.dmc_tasks as tasks
+import envs.dmc_tasks as tasks
 import numpy as np
 from dm_control import composer
 import shimmy

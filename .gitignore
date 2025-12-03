@@ -21,5 +21,5 @@ ref/
 *.zip
 
 # 忽略编辑器和IDE配置
-.vscode/
-.trae/
+# .vscode/
+# .trae/

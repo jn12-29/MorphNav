@@ -5,11 +5,15 @@ mujoco-mjx
 dm_control
 playground
 torch
+numpy
 matplotlib
 IPython
 # gymnasium[all]  # sudo apt install swig
 gym
 gymnasium
+shimmy
+opencv-python
+imageio
 mediapy
 nvitop
 ipykernel

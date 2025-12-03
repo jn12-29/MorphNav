@@ -1,0 +1,17 @@
+brax
+jax[cuda12]
+mujoco
+mujoco-mjx
+dm_control
+playground
+torch
+matplotlib
+IPython
+# gymnasium[all]  # sudo apt install swig
+gym
+gymnasium
+mediapy
+nvitop
+ipykernel
+ipywidgets
+

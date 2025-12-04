@@ -1,6 +1,6 @@
 from collections import OrderedDict
 
-import gym
+import gymnasium as gym
 import mujoco_py
 import numpy as np
 from gym import spaces

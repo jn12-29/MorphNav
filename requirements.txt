@@ -2,6 +2,7 @@ brax
 jax[cuda12]
 mujoco
 mujoco-mjx
+sb3-contrib
 dm_control
 playground
 torch
@@ -9,8 +10,7 @@ numpy
 matplotlib
 IPython
 # gymnasium[all]  # sudo apt install swig
-gym
-gymnasium
+gymnasium[mujoco]
 shimmy
 opencv-python
 imageio

@@ -1,5 +1,7 @@
 import numpy as np
-from gym import utils
+
+
+from gymnasium import utils
 
 from config import cfg
 from envs.modules.agent import Agent

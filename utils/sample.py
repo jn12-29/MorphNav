@@ -1,6 +1,6 @@
 import random
 
-import gym
+import gymnasium as gym
 import numpy as np
 import torch
 
@@ -112,5 +112,5 @@ def set_seed(seed, idx=0, use_strong_seeding=False):
 def strong_seed(seed):
     """Get a strong uncorrelated seed from naive seeding."""
     seed = gym.utils.seeding.hash_seed(seed)
-    _, seed = divmod(seed, 2 ** 32)
+    _, seed = divmod(seed, 2**32)
     return seed

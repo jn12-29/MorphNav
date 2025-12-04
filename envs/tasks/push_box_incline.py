@@ -1,5 +1,7 @@
 import numpy as np
-from gym import utils
+
+
+from gymnasium import utils
 from scipy.spatial import distance as scipy_distance
 
 from config import cfg

@@ -2,8 +2,8 @@ import time
 
 import glfw
 import numpy as np
-from gym.spaces import Box
-from gym.spaces import MultiDiscrete
+from gymnasium.spaces import Box
+from gymnasium.spaces import MultiDiscrete
 from mujoco_py import MjViewer
 from mujoco_py import const
 from mujoco_py import ignore_mujoco_warnings
@@ -24,9 +24,7 @@ class EnvViewer(MjViewer):
         if isinstance(action_space, Box):
             return np.zeros(action_space.shape[0])
         elif isinstance(action_space, MultiDiscrete):
-            return (
-                action_space.nvec // 2
-            )  # assume middle element is "no action" action
+            return action_space.nvec // 2  # assume middle element is "no action" action
 
     def env_reset(self):
         start = time.time()
@@ -107,8 +105,7 @@ class EnvViewer(MjViewer):
             )
             self.add_overlay(
                 const.GRID_TOPRIGHT,
-                "on action index %d out %d"
-                % (self.action_mod_index, self.num_action),
+                "on action index %d out %d" % (self.action_mod_index, self.num_action),
                 "J / K",
             )
             self.add_overlay(

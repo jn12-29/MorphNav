@@ -1,4 +1,4 @@
-import gym
+import gymnasium as gym
 import numpy as np
 
 from .running_mean_std import RunningMeanStd
@@ -62,8 +62,7 @@ class VecNormalize(VecEnvWrapper):
                 self.ob_rms.update(obs_p)
 
             obs_p = np.clip(
-                (obs_p - self.ob_rms.mean)
-                / np.sqrt(self.ob_rms.var + self.epsilon),
+                (obs_p - self.ob_rms.mean) / np.sqrt(self.ob_rms.var + self.epsilon),
                 -self.clipob,
                 self.clipob,
             )

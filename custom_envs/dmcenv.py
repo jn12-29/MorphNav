@@ -59,21 +59,26 @@ class DMCEnv(shimmy.DmControlCompatibilityV0):
         self,
         walker_name="Ant",
         task_name="Floor",
+        walker_kwargs={},
+        arena_kwargs={},
+        task_kwargs={},
+        env_kwargs={},
         seed=0,
         render_mode=None,
         **render_kwargs,
     ):
         # print(f"{walker_name =}, {task_name = }")
         if walker_name == "Ant":
-            walker = Ant()
+            walker = Ant(**walker_kwargs)
         elif walker_name == "Humanoid":
-            walker = CMUHumanoidPositionControlledV2020()
+            walker = CMUHumanoidPositionControlledV2020(**walker_kwargs)
         else:
             raise NotImplementedError(f"Unsupported walker: {walker_name}")
 
         if task_name == "Floor":
             arena = arenas.Floor(
                 aesthetic="outdoor_natural",
+                **arena_kwargs,
             )
             task = tasks.RunThroughCorridor(
                 walker=walker,
@@ -81,6 +86,7 @@ class DMCEnv(shimmy.DmControlCompatibilityV0):
                 physics_timestep=0.001,
                 control_timestep=0.005,
                 contact_termination=False,
+                **task_kwargs,
             )
         elif task_name == "Gaps":
             arena = arenas.GapsCorridor(
@@ -90,6 +96,7 @@ class DMCEnv(shimmy.DmControlCompatibilityV0):
                 # corridor_length=10,
                 visible_side_planes=True,
                 aesthetic="outdoor_natural",
+                **arena_kwargs,
             )
             task = tasks.RunThroughCorridor(
                 walker=walker,
@@ -98,16 +105,19 @@ class DMCEnv(shimmy.DmControlCompatibilityV0):
                 physics_timestep=0.001,
                 control_timestep=0.005,
                 contact_termination=False,
+                **task_kwargs,
             )
         elif task_name == "Escape":
             arena = arenas.Bowl(
                 aesthetic="outdoor_natural",
+                **arena_kwargs,
             )
             task = tasks.Escape(
                 walker=walker,
                 arena=arena,
                 physics_timestep=0.001,
                 control_timestep=0.005,
+                **task_kwargs,
             )
         elif task_name == "Maze":
             from custom_envs.build_maze import maze
@@ -121,10 +131,12 @@ class DMCEnv(shimmy.DmControlCompatibilityV0):
                 floor_textures=None,
                 aesthetic="outdoor_natural",
                 name="maze",
+                **arena_kwargs,
             )
             task = tasks.RepeatSingleGoalMaze(
                 walker=walker,
                 maze_arena=arena,
+                **task_kwargs,
             )
         else:
             raise NotImplementedError(f"Unsupported task: {task_name}")

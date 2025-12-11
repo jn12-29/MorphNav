@@ -13,28 +13,7 @@ os.environ["MUJOCO_GL"] = "egl"
 curdir = os.path.dirname(os.path.abspath(__file__))
 sys.path.append(curdir)
 import custom_envs
-
-
-def random_action(action_size):
-    return np.random.uniform(-1, 1, (action_size))
-
-
-from stable_baselines3.common.utils import set_random_seed
-from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import SubprocVecEnv
-
-
-def make_env(env_id, task_name, rank, seed=0):
-    """
-    用于创建并返回一个环境实例的函数，必须定义在全局作用域。
-    """
-
-    def _init():
-        env = gym.make(env_id, task_name=task_name, seed=seed + rank)
-        return env
-
-    set_random_seed(seed)
-    return _init
+from utils.sb3_utils import make_subproc_vec_env, random_action
 
 
 if __name__ == "__main__":
@@ -51,7 +30,7 @@ if __name__ == "__main__":
 
     env_id = "DMCAnt-v0"
     task_name = "Maze"
-    env = SubprocVecEnv([make_env(env_id, task_name, i) for i in range(num_envs)])
+    env = make_subproc_vec_env(env_id, task_name, num_envs)
     env.reset()
     print(env.observation_space)
     print(env.action_space)
@@ -71,9 +50,7 @@ if __name__ == "__main__":
     for i in tqdm(range(repeat_times)):
         obs, reward, done, info = env.step(random_action(env.action_space.shape[0]))
         if i % 20 == 0:
-            env = SubprocVecEnv(
-                [make_env(env_id, task_name, i) for i in range(num_envs)]
-            )
+            env = make_subproc_vec_env(env_id, task_name, num_envs)
             # remake env will reset start postion and target of maze
             env.reset()
             maze_map += env.env_method(

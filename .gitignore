@@ -5,6 +5,8 @@
 __pycache__/
 **/__pycache__/
 
+**/*.egg-info/
+
 # 忽略日志和输出目录
 logs/
 **/logs/

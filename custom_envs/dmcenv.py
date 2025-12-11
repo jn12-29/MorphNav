@@ -110,8 +110,17 @@ class DMCEnv(shimmy.DmControlCompatibilityV0):
                 control_timestep=0.005,
             )
         elif task_name == "Maze":
+            from custom_envs.build_maze import maze
+
             arena = arenas.MazeWithTargets(
+                maze,
+                xy_scale=2.0,
+                z_height=2.0,
+                skybox_texture=None,
+                wall_textures=None,
+                floor_textures=None,
                 aesthetic="outdoor_natural",
+                name="maze",
             )
             task = tasks.RepeatSingleGoalMaze(
                 walker=walker,

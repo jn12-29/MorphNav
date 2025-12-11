@@ -7,6 +7,7 @@ gym.register(
     max_episode_steps=1000,
     kwargs={"walker_name": "Ant"},
 )
+print(f"DMCAnt-v0 registered")
 
 gym.register(
     id="DMCHumanoid-v0",

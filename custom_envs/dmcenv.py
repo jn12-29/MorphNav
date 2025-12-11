@@ -63,7 +63,7 @@ class DMCEnv(shimmy.DmControlCompatibilityV0):
         render_mode=None,
         **render_kwargs,
     ):
-        print(f"{walker_name =}, {task_name = }")
+        # print(f"{walker_name =}, {task_name = }")
         if walker_name == "Ant":
             walker = Ant()
         elif walker_name == "Humanoid":
@@ -188,6 +188,9 @@ class DMCEnv(shimmy.DmControlCompatibilityV0):
             [obs[key].flatten() for key in obs.keys()], axis=0
         )
         return {"image": egocentric, "proprio": proprioception}
+
+    def custom_render(self, camera_id=0, width=128, height=128):
+        return self._env.physics.render(camera_id=camera_id, width=width, height=height)
 
 
 if __name__ == "__main__":

@@ -125,3 +125,39 @@ LARGE_MAZE_DIVERSE_GR = [
     [1, 0, 0, 1, C, 0, C, 1, 0, C, 0, 1],
     [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
 ]
+
+
+if __name__ == "__main__":
+    # visualize the mazes
+    from utils import parse_string_from_maze
+
+    for maze_name, maze in zip(
+        [
+            "EMPTY_MAZE",
+            "OPEN",
+            "OPEN_DIVERSE_G",
+            "OPEN_DIVERSE_GR",
+            "U_MAZE",
+            "MEDIUM_MAZE",
+            "MEDIUM_MAZE_DIVERSE_G",
+            "MEDIUM_MAZE_DIVERSE_GR",
+            "LARGE_MAZE",
+            "LARGE_MAZE_DIVERSE_G",
+            "LARGE_MAZE_DIVERSE_GR",
+        ],
+        [
+            EMPTY_MAZE,
+            OPEN,
+            OPEN_DIVERSE_G,
+            OPEN_DIVERSE_GR,
+            U_MAZE,
+            MEDIUM_MAZE,
+            MEDIUM_MAZE_DIVERSE_G,
+            MEDIUM_MAZE_DIVERSE_GR,
+            LARGE_MAZE,
+            LARGE_MAZE_DIVERSE_G,
+            LARGE_MAZE_DIVERSE_GR,
+        ],
+    ):
+        print(f"Maze Name: {maze_name}")
+        print(parse_string_from_maze(maze))

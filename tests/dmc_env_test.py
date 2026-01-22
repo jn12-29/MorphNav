@@ -10,8 +10,7 @@ import matplotlib.pyplot as plt
 
 os.environ["MUJOCO_GL"] = "egl"
 # paradir = os.path.dirname(curdir)
-curdir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(curdir)
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import envs
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.env_util import make_vec_env
@@ -20,16 +19,6 @@ from utils.sb3_utils import random_action
 
 if __name__ == "__main__":
     num_envs = 4
-    # env = gym.make("DMCAnt-v0", task_name="Floor")
-
-    # env = gym.make("DMCHumanoid-v0", task_name="Floor")
-
-    # env = gym.make("DMCHumanoid-v0", task_name="Gaps")
-
-    # env = gym.make("DMCHumanoid-v0", task_name="Maze")
-
-    # env.reset()
-
     env_id = "DMCAnt-v0"
     task_name = "Maze"
     env = make_vec_env(

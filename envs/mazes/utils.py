@@ -33,6 +33,10 @@ def parse_maze_from_string(layout_str):
                 row.append(1)  # Wall
             elif char == " ":
                 row.append(0)  # Free space
+            elif char == "P":
+                row.append("r")  # Reset location
+            elif char == "G":
+                row.append("g")  # Goal location
             else:
                 raise ValueError(f"Unexpected character '{char}' in maze layout.")
         maze.append(row)
@@ -46,6 +50,12 @@ def parse_string_from_maze(maze):
             if cell == 1:
                 layout_str += "*"
             elif cell == 0:
+                layout_str += " "
+            elif cell == "r":
+                layout_str += "P"
+            elif cell == "g":
+                layout_str += "G"
+            elif cell == "c":
                 layout_str += " "
             else:
                 raise ValueError(f"Unexpected cell value '{cell}' in maze.")

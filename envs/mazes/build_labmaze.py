@@ -1,5 +1,5 @@
 import labmaze
-from utils import msw
+from .utils import msw
 
 # https://github.com/google-deepmind/labmaze/
 # maze = labmaze.RandomMaze(

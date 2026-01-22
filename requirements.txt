@@ -17,4 +17,5 @@ mediapy
 nvitop
 ipykernel
 ipywidgets
-
+wandb
+moviepy>=1.0.0

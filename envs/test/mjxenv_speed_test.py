@@ -18,7 +18,7 @@ if __name__ == "__main__":
         camera_name="egocentric",
         width=64,
         height=64,
-        xml_file="/mnt/disk2/xh2/ai4neuron/derl/custom_envs/asset/ant_mjx.xml",
+        xml_file="/mnt/disk2/xh2/ai4neuron/derl/custom_envs/assets/ant_mjx.xml",
     )
     obs, info = env.reset()
     print(f"{obs = }")

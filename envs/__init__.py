@@ -20,3 +20,9 @@ gym.register(
     entry_point="envs.point_maze:PointMazeEnv",
     max_episode_steps=300,
 )
+
+gym.register(
+    id="AntMaze",
+    entry_point="envs.ant_maze:AntMazeEnv",
+    max_episode_steps=500,
+)

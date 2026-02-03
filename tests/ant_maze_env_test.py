@@ -19,13 +19,8 @@ from utils.sb3_utils import random_action
 
 if __name__ == "__main__":
     num_envs = 4
-    env_id = "PointMaze"
-    kwargs = {
-        "continuing_task": False,
-        "render_mode": "rgb_array",
-        "xml_file_path": "/home/xh/ai4neuron/MorphNav/envs/assets/point_v1.xml",
-        "maze_map_name": "MEDIUM_MAZE",
-    }
+    env_id = "AntMaze"
+    kwargs = {"continuing_task": False, "render_mode": "rgb_array"}
     env = make_vec_env(
         env_id,
         n_envs=num_envs,

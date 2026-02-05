@@ -1,0 +1,75 @@
+<mujoco model="biped_ant_style">
+  <compiler angle="radian"/>
+  <visual>
+    <global offwidth="1280" offheight="720"/>
+  </visual>
+  <default>
+    <joint solreflimit="0.04" solimplimit="0 0.8 0.03" stiffness="1" limited="true" armature="1" damping="1"/>
+    <geom friction="1 0.5 0.5" solimp="0 0.8 0.01" density="50" material="self"/>
+    <general ctrllimited="true" ctrlrange="-1 1" gear="75 0 0 0 0 0"/>
+  </default>
+
+  <asset>
+    <material name="self" rgba="0.8 0.6 0.4 1"/>
+  </asset>
+
+  <worldbody>
+    <geom name="ground" size="10 10 0.1" type="plane" rgba="0.9 0.9 0.9 1"/>
+    <camera name="sideon" target="torso" pos="0 -6 2.5" mode="targetbody"/>
+    <body name="torso" pos="0 0 0.9">
+      <joint name="root" type="free" solreflimit="0.02" solimplimit="0.9 0.95 0.001" stiffness="0" armature="0" damping="0"/>
+      <geom name="torso_geom" size="0.2" density="100"/>
+      <site name="torso_touch" pos="0 0 0" size="0.22 0.16 0.18" group="4" type="box" rgba="0 0 1 1"/>
+      <site name="torso_site" pos="0 0 0" size="0.05" rgba="1 0 0 1"/>
+      <body name="left_leg">
+        <geom name="left_aux_geom" size="0.08 0.0934077" pos="0 0.09 -0.025" quat="0.796129 0.605126 0 0" type="capsule"/>
+        <body name="left_aux" pos="0 0.18 -0.05">
+          <joint name="left_hip" pos="0 0 0" axis="0 1 0" range="-0.7 0.7"/>
+          <geom name="left_leg_geom" size="0.08 0.175" pos="0 0 -0.175" type="capsule"/>
+          <site name="left_leg_touch" pos="0 0 -0.175" quat="0 1 0 0" size="0.1 0.1 0.25" group="4" type="box" rgba="1 1 0 0"/>
+          <body name="left_foot" pos="0 0 -0.35" quat="0.90151 -0.306007 0.306007 0">
+            <joint name="left_ankle" pos="0 0 0" axis="0.707107 -0.707107 0" range="-0.5 0.5"/>
+            <geom name="left_ankle_geom" size="0.08 0.175" pos="0 0 -0.175" type="capsule"/>
+            <site name="left_ankle_touch" pos="0 0 -0.175" quat="0 1 0 0" size="0.1 0.1 0.3" group="4" type="box" rgba="1 1 0 0"/>
+          </body>
+        </body>
+      </body>
+      <body name="right_leg">
+        <geom name="right_aux_geom" size="0.08 0.0934077" pos="0 -0.09 -0.025" quat="0.796129 -0.605126 0 0" type="capsule"/>
+        <body name="right_aux" pos="0 -0.18 -0.05">
+          <joint name="right_hip" pos="0 0 0" axis="0 1 0" range="-0.7 0.7"/>
+          <geom name="right_leg_geom" size="0.08 0.175" pos="0 0 -0.175" type="capsule"/>
+          <site name="right_leg_touch" pos="0 0 -0.175" quat="0 1 0 0" size="0.1 0.1 0.25" group="4" type="box" rgba="1 1 0 0"/>
+          <body name="right_foot" pos="0 0 -0.35" quat="0.90151 0.306007 0.306007 0">
+            <joint name="right_ankle" pos="0 0 0" axis="-0.707107 -0.707107 0" range="-0.5 0.5"/>
+            <geom name="right_ankle_geom" size="0.08 0.175" pos="0 0 -0.175" type="capsule"/>
+            <site name="right_ankle_touch" pos="0 0 -0.175" quat="0 1 0 0" size="0.1 0.1 0.3" group="4" type="box" rgba="1 1 0 0"/>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <contact>
+    <exclude body1="torso" body2="left_aux"/>
+    <exclude body1="torso" body2="right_aux"/>
+  </contact>
+
+  <actuator>
+    <general name="left_hip" joint="left_hip"/>
+    <general name="left_ankle" joint="left_ankle"/>
+    <general name="right_hip" joint="right_hip"/>
+    <general name="right_ankle" joint="right_ankle"/>
+  </actuator>
+
+  <sensor>
+    <touch site="torso_touch" name="torso_touch"/>
+    <touch site="left_leg_touch" name="left_leg_touch"/>
+    <touch site="left_ankle_touch" name="left_ankle_touch"/>
+    <touch site="right_leg_touch" name="right_leg_touch"/>
+    <touch site="right_ankle_touch" name="right_ankle_touch"/>
+    <velocimeter site="torso_site" name="torso_vel"/>
+    <gyro site="torso_site" name="torso_gyro"/>
+    <accelerometer site="torso_site" name="torso_accel"/>
+  </sensor>
+</mujoco>

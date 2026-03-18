@@ -368,38 +368,40 @@ class MazeEnv(GoalEnv):
         return xy_pos
 
     def compute_reward(
-        self, achieved_goal: np.ndarray, desired_goal: np.ndarray, info
+        self,
+        cur_pos: np.ndarray,
+        desired_goal: np.ndarray,
+        info,
+        success_threshold: float = 0.45,
     ) -> float:
         reward = 0.0
         reward -= self.time_penalty
-        distance = np.linalg.norm(achieved_goal - desired_goal, axis=-1)
+        distance = np.linalg.norm(cur_pos - desired_goal, axis=-1)
         if self.reward_type == "dense":
             return reward + np.exp(-distance)
         elif self.reward_type == "sparse":
-            return reward + (distance <= 0.45).astype(np.float64)
+            return reward + (distance <= success_threshold).astype(np.float64)
 
-    def compute_terminated(
-        self, achieved_goal: np.ndarray, desired_goal: np.ndarray, info
-    ) -> bool:
+    def compute_terminated(self, is_goal_achieved: bool) -> bool:
         if not self.continuing_task:
             # If task is episodic terminate the episode when the goal is reached
-            return bool(np.linalg.norm(achieved_goal - desired_goal) <= 0.45)
+            return is_goal_achieved
         else:
             # Continuing tasks don't terminate, episode will be truncated when time limit is reached (`max_episode_steps`)
             return False
 
-    def update_goal(self, achieved_goal: np.ndarray) -> None:
+    def update_goal(self, is_goal_achieved: bool) -> None:
         """Update goal position if continuing task and within goal radius."""
 
         if (
             self.continuing_task
             and self.reset_target
-            and bool(np.linalg.norm(achieved_goal - self.goal) <= 0.45)
+            and is_goal_achieved
             and len(self.maze.unique_goal_locations) > 1
         ):
             # Generate a goal while within 0.45 of achieved_goal. The distance check above
             # is not redundant, it avoids calling update_target_site_pos() unless necessary
-            while np.linalg.norm(achieved_goal - self.goal) <= 0.45:
+            while is_goal_achieved:
                 # Generate another goal
                 goal = self.generate_target_goal()
                 # Add noise to goal position

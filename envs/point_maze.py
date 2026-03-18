@@ -24,6 +24,8 @@ from gymnasium import spaces
 from gymnasium.envs.mujoco.mujoco_env import MujocoEnv
 from gymnasium_robotics.utils.mujoco_utils import MujocoModelNames
 
+SUCCESS_RADIUS = 0.4
+
 
 class PointEnv(MujocoEnv):
 
@@ -121,20 +123,25 @@ class PointMazeEnv(MazeEnv, EzPickle):
         render_mode: Optional[str] = None,
         reward_type: str = "sparse",
         continuing_task: bool = True,
-        reset_target: bool = False,
+        reset_target: bool = True,
         cur_pos_aware: bool = True,
         target_aware: bool = True,
+        start_pos_aware: bool = True,
         sensor_aware: bool = True,
         time_penalty: float = 0.0,
         **kwargs,
     ):
         self.cur_pos_aware = cur_pos_aware
         self.target_aware = target_aware
+        self.start_pos_aware = start_pos_aware
         point_xml_file_path = kwargs.pop(
             "xml_file_path",
             path.join(path.dirname(path.realpath(__file__)), "assets", "point.xml"),
         )
         print("Loading point maze from XML file:", point_xml_file_path)
+        global SUCCESS_RADIUS
+        SUCCESS_RADIUS = kwargs.pop("success_radius", SUCCESS_RADIUS)
+        print("Using success radius:", SUCCESS_RADIUS)
         if maze_map_name is not None:
             maze_map = eval(maze_map_name)
             print("Using Maze Map:", maze_map_name)
@@ -170,6 +177,11 @@ class PointMazeEnv(MazeEnv, EzPickle):
             dict(
                 observation=spaces.Box(
                     -np.inf, np.inf, shape=obs_shape, dtype="float64"
+                ),
+                start_pos=(
+                    spaces.Box(-np.inf, np.inf, shape=(2,), dtype="float64")
+                    if start_pos_aware
+                    else spaces.Box(0, 0, shape=(1,), dtype="float64")
                 ),
                 achieved_goal=(
                     spaces.Box(-np.inf, np.inf, shape=(2,), dtype="float64")
@@ -207,7 +219,7 @@ class PointMazeEnv(MazeEnv, EzPickle):
 
         obs, info = self.point_env.reset(seed=seed)
         obs_dict = self._get_obs(obs, self.reset_pos)
-        info["success"] = bool(np.linalg.norm(self.reset_pos - self.goal) <= 0.45)
+        info["success"] = self.is_goal_achieved(self.reset_pos)
 
         return obs_dict, info
 
@@ -215,13 +227,13 @@ class PointMazeEnv(MazeEnv, EzPickle):
         obs, _, _, _, info = self.point_env.step(action)
         cur_pos = info["qpos"][:2]
         obs_dict = self._get_obs(obs, cur_pos)
-        reward = self.compute_reward(cur_pos, self.goal, info)
-        terminated = self.compute_terminated(cur_pos, self.goal, info)
+        reward = self.compute_reward(cur_pos, self.goal, info, SUCCESS_RADIUS)
+        terminated = self.compute_terminated(self.is_goal_achieved(cur_pos))
         truncated = self.compute_truncated(cur_pos, self.goal, info)
-        info["success"] = bool(np.linalg.norm(cur_pos - self.goal) <= 0.45)
+        info["success"] = self.is_goal_achieved(cur_pos)
 
         # Update the goal position if necessary
-        self.update_goal(cur_pos)
+        self.update_goal(self.is_goal_achieved(cur_pos))
 
         return obs_dict, reward, terminated, truncated, info
 
@@ -233,6 +245,11 @@ class PointMazeEnv(MazeEnv, EzPickle):
     def _get_obs(self, point_obs, cur_pos) -> Dict[str, np.ndarray]:
         return {
             "observation": point_obs.copy(),
+            "start_pos": (
+                self.reset_pos.copy()
+                if self.start_pos_aware
+                else np.array([0], dtype=np.float64)
+            ),
             "achieved_goal": (
                 cur_pos.copy()
                 if self.cur_pos_aware
@@ -251,6 +268,9 @@ class PointMazeEnv(MazeEnv, EzPickle):
     def close(self):
         super().close()
         self.point_env.close()
+
+    def is_goal_achieved(self, cur_pos):
+        return bool(np.linalg.norm(cur_pos - self.goal) <= SUCCESS_RADIUS)
 
     @property
     def model(self):

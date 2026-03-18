@@ -17,5 +17,7 @@ mediapy
 nvitop
 ipykernel
 ipywidgets
+gymnasium_robotics
+tensorboard
 wandb
 moviepy>=1.0.0

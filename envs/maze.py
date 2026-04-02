@@ -369,14 +369,14 @@ class MazeEnv(GoalEnv):
 
     def compute_reward(
         self,
-        cur_pos: np.ndarray,
+        achieved_goal: np.ndarray,
         desired_goal: np.ndarray,
         info,
         success_threshold: float = 0.45,
     ) -> float:
         reward = 0.0
         reward -= self.time_penalty
-        distance = np.linalg.norm(cur_pos - desired_goal, axis=-1)
+        distance = np.linalg.norm(achieved_goal - desired_goal, axis=-1)
         if self.reward_type == "dense":
             return reward + np.exp(-distance)
         elif self.reward_type == "sparse":

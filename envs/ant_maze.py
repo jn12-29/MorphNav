@@ -267,13 +267,13 @@ class AntMazeEnv(MazeEnv, EzPickle):
         continuing_task: bool = True,
         reset_target: bool = False,
         xml_file: Union[str, None] = None,
-        cur_pos_aware: bool = True,
+        achieved_goal_aware: bool = True,
         target_aware: bool = True,
         sensor_aware: bool = True,
         time_penalty: float = 0.0,
         **kwargs,
     ):
-        self.cur_pos_aware = cur_pos_aware
+        self.achieved_goal_aware = achieved_goal_aware
         self.target_aware = target_aware
         if xml_file is None:
             # Get the ant.xml path from the Gymnasium package
@@ -316,7 +316,7 @@ class AntMazeEnv(MazeEnv, EzPickle):
                 ),
                 achieved_goal=(
                     spaces.Box(-np.inf, np.inf, shape=(2,), dtype="float64")
-                    if cur_pos_aware
+                    if achieved_goal_aware
                     else spaces.Box(0, 0, shape=(1,), dtype="float64")
                 ),
                 desired_goal=(
@@ -352,12 +352,12 @@ class AntMazeEnv(MazeEnv, EzPickle):
     def step(self, action):
         ant_obs, _, _, _, info = self.ant_env.step(action)
         obs = self._get_obs(ant_obs)
-        cur_pos = info["qpos"][:2]
+        achieved_goal = info["qpos"][:2]
 
-        reward = self.compute_reward(cur_pos, self.goal, info)
-        terminated = self.compute_terminated(cur_pos, self.goal, info)
-        truncated = self.compute_truncated(cur_pos, self.goal, info)
-        info["success"] = bool(np.linalg.norm(cur_pos - self.goal) <= 0.45)
+        reward = self.compute_reward(achieved_goal, self.goal, info)
+        terminated = self.compute_terminated(achieved_goal, self.goal, info)
+        truncated = self.compute_truncated(achieved_goal, self.goal, info)
+        info["success"] = bool(np.linalg.norm(achieved_goal - self.goal) <= 0.45)
 
         if self.render_mode == "human":
             self.render()
@@ -375,7 +375,7 @@ class AntMazeEnv(MazeEnv, EzPickle):
             "observation": observation.copy(),
             "achieved_goal": (
                 achieved_goal.copy()
-                if self.cur_pos_aware
+                if self.achieved_goal_aware
                 else np.array([0], dtype=np.float64)
             ),
             "desired_goal": (

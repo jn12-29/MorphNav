@@ -10,3 +10,6 @@ CUDA_VISIBLE_DEVICES=5 MUJOCO_GL='egl' python ./rl-baselines3-zoo/rl_zoo3/record
 
 
 CUDA_VISIBLE_DEVICES=3 MUJOCO_GL='egl' python ./rl-baselines3-zoo/rl_zoo3/record_video_with_data.py --algo ppo_lstm --env PointMaze -f ./logs --exp-id 3  -n 12000 --load-best  --env-kwargs max_episode_steps:300
+
+# with aux
+CUDA_VISIBLE_DEVICES=2 MUJOCO_GL='egl' python ./rl-baselines3-zoo/rl_zoo3/record_video_with_data.py --algo aux_ppo_lstm --env PointMaze -f ./logs --exp-id 7  -n 12000 --load-best  --env-kwargs max_episode_steps:200 continuing_task:False 

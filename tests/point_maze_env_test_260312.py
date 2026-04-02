@@ -22,7 +22,7 @@ if __name__ == "__main__":
     env_id = "PointMaze"
     kwargs = {
         "continuing_task": False,
-        "cur_pos_aware": False,
+        "achieved_goal_aware": False,
         "target_aware": True,
         "start_pos_aware": True,
         "sensor_aware": False,

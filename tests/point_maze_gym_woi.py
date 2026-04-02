@@ -13,7 +13,7 @@ if __name__ == "__main__":
     env_id = "PointMaze"
     kwargs = {
         "continuing_task": False,
-        "cur_pos_aware": False,
+        "achieved_goal_aware": False,
         "target_aware": False,
         "xml_file_path": "/home/xh/ai4neuron/MorphNav/envs/assets/point_v1.xml",
         "time_penalty": 0.001,

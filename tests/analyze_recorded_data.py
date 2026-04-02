@@ -16,8 +16,11 @@ from scipy.ndimage import rotate
 import warnings
 from scipy.ndimage import gaussian_filter
 from scipy.ndimage import gaussian_filter1d
+import os
 
 sys.path.append("/home/xh/ai4neuron/MorphNav/rl-baselines3-zoo")
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import components
 from rl_zoo3.data_recorder import DataRecorder
 
 
@@ -969,9 +972,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--data-dir", type=str, default="./recorded_data", help="数据目录"
     )
-    parser.add_argument(
-        "--output-dir", type=str, default="./analysis_results", help="输出目录"
-    )
+    parser.add_argument("--output-dir", type=str, default="", help="输出目录")
     parser.add_argument("--n-bins", type=int, default=32, help="网格大小")
     parser.add_argument(
         "--bounds",
@@ -1005,6 +1006,9 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
+
+    args.output_dir = os.path.join(args.data_dir, "analysis_results")
+    os.makedirs(args.output_dir, exist_ok=True)
 
     analyze_recorded_data(
         data_dir=args.data_dir,

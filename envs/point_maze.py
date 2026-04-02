@@ -40,7 +40,6 @@ class PointEnv(MujocoEnv):
 
     def __init__(self, xml_file: Optional[str] = None, **kwargs):
 
-        self.cur_pos_aware = kwargs.pop("cur_pos_aware", True)
         self.sensor_aware = kwargs.pop("sensor_aware", True)
         if xml_file is None:
             xml_file = path.join(
@@ -53,10 +52,7 @@ class PointEnv(MujocoEnv):
             observation_space=None,
             **kwargs,
         )
-        if self.cur_pos_aware:
-            obs_size = self.data.qpos.size
-        else:
-            obs_size = 0
+        obs_size = 0
         obs_size += self.data.qvel.size
         if self.data.sensordata.size > 0 and self.sensor_aware:
             obs_size += self.data.sensordata.size
@@ -88,8 +84,6 @@ class PointEnv(MujocoEnv):
 
     def _get_obs(self) -> np.ndarray:
         obs_list = [self.data.qvel]
-        if self.cur_pos_aware:
-            obs_list.append(self.data.qpos)
         if self.data.sensordata.size > 0 and self.sensor_aware:
             obs_list.append(self.data.sensordata)
         return np.concatenate(obs_list).ravel(), {
@@ -124,16 +118,20 @@ class PointMazeEnv(MazeEnv, EzPickle):
         reward_type: str = "sparse",
         continuing_task: bool = True,
         reset_target: bool = True,
-        cur_pos_aware: bool = True,
+        achieved_goal_aware: bool = True,
         target_aware: bool = True,
         start_pos_aware: bool = True,
         sensor_aware: bool = True,
         time_penalty: float = 0.0,
+        min_vel_threshold: float = 0.01,
+        min_vel_penalty: float = 0.0,
         **kwargs,
     ):
-        self.cur_pos_aware = cur_pos_aware
+        self.achieved_goal_aware = achieved_goal_aware
         self.target_aware = target_aware
         self.start_pos_aware = start_pos_aware
+        self.min_vel_threshold = min_vel_threshold
+        self.min_vel_penalty = min_vel_penalty
         point_xml_file_path = kwargs.pop(
             "xml_file_path",
             path.join(path.dirname(path.realpath(__file__)), "assets", "point.xml"),
@@ -164,7 +162,6 @@ class PointMazeEnv(MazeEnv, EzPickle):
             xml_file=self.tmp_xml_file_path,
             render_mode=render_mode,
             default_camera_config=default_camera_config,
-            cur_pos_aware=cur_pos_aware,
             sensor_aware=sensor_aware,
             **kwargs,
         )
@@ -185,7 +182,7 @@ class PointMazeEnv(MazeEnv, EzPickle):
                 ),
                 achieved_goal=(
                     spaces.Box(-np.inf, np.inf, shape=(2,), dtype="float64")
-                    if cur_pos_aware
+                    if achieved_goal_aware
                     else spaces.Box(0, 0, shape=(1,), dtype="float64")
                 ),
                 desired_goal=(
@@ -223,17 +220,27 @@ class PointMazeEnv(MazeEnv, EzPickle):
 
         return obs_dict, info
 
+    def vel_penalty(self, vel):
+        if vel < self.min_vel_threshold:
+            return self.min_vel_penalty * (vel - self.min_vel_threshold)
+        else:
+            return 0
+
     def step(self, action):
         obs, _, _, _, info = self.point_env.step(action)
-        cur_pos = info["qpos"][:2]
-        obs_dict = self._get_obs(obs, cur_pos)
-        reward = self.compute_reward(cur_pos, self.goal, info, SUCCESS_RADIUS)
-        terminated = self.compute_terminated(self.is_goal_achieved(cur_pos))
-        truncated = self.compute_truncated(cur_pos, self.goal, info)
-        info["success"] = self.is_goal_achieved(cur_pos)
+        achieved_goal = info["qpos"][:2]
+        obs_dict = self._get_obs(obs, achieved_goal)
+        speed = np.linalg.norm(info["qvel"][:2])
+        info["speed"] = speed
+        reward = self.compute_reward(achieved_goal, self.goal, info, SUCCESS_RADIUS)
+        if self.min_vel_penalty > 0:
+            reward += self.vel_penalty(speed)
+        terminated = self.compute_terminated(self.is_goal_achieved(achieved_goal))
+        truncated = self.compute_truncated(achieved_goal, self.goal, info)
+        info["success"] = self.is_goal_achieved(achieved_goal)
 
         # Update the goal position if necessary
-        self.update_goal(self.is_goal_achieved(cur_pos))
+        self.update_goal(self.is_goal_achieved(achieved_goal))
 
         return obs_dict, reward, terminated, truncated, info
 
@@ -242,7 +249,7 @@ class PointMazeEnv(MazeEnv, EzPickle):
             self.goal, self.maze.maze_height / 2 * self.maze.maze_size_scaling
         )
 
-    def _get_obs(self, point_obs, cur_pos) -> Dict[str, np.ndarray]:
+    def _get_obs(self, point_obs, achieved_goal) -> Dict[str, np.ndarray]:
         return {
             "observation": point_obs.copy(),
             "start_pos": (
@@ -251,8 +258,8 @@ class PointMazeEnv(MazeEnv, EzPickle):
                 else np.array([0], dtype=np.float64)
             ),
             "achieved_goal": (
-                cur_pos.copy()
-                if self.cur_pos_aware
+                achieved_goal.copy()
+                if self.achieved_goal_aware
                 else np.array([0], dtype=np.float64)
             ),
             "desired_goal": (
@@ -269,8 +276,8 @@ class PointMazeEnv(MazeEnv, EzPickle):
         super().close()
         self.point_env.close()
 
-    def is_goal_achieved(self, cur_pos):
-        return bool(np.linalg.norm(cur_pos - self.goal) <= SUCCESS_RADIUS)
+    def is_goal_achieved(self, achieved_goal):
+        return bool(np.linalg.norm(achieved_goal - self.goal) <= SUCCESS_RADIUS)
 
     @property
     def model(self):

@@ -92,10 +92,19 @@ class PointEnv(MujocoEnv):
             "sensordata": self.data.sensordata.copy(),
         }
 
+    # def _clip_velocity(self):
+    #     """The velocity needs to be limited because the ball is
+    #     force actuated and the velocity can grow unbounded."""
+    #     qvel = np.clip(self.data.qvel, -0.3, 0.3)
+    #     self.set_state(self.data.qpos, qvel)
+
     def _clip_velocity(self):
-        """The velocity needs to be limited because the ball is
-        force actuated and the velocity can grow unbounded."""
-        qvel = np.clip(self.data.qvel, -5.0, 5.0)
+        qvel = self.data.qvel.copy()
+        v = qvel[:2]
+        speed = np.linalg.norm(v)
+        max_speed = 0.3
+        if speed > max_speed:
+            qvel[:2] = v / (speed + 1e-8) * max_speed
         self.set_state(self.data.qpos, qvel)
 
 

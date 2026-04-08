@@ -7,16 +7,31 @@ from sb3_contrib.common.recurrent.type_aliases import RNNStates
 from sb3_contrib.common.recurrent.policies import RecurrentActorCriticPolicy
 
 
+class AuxPositionHead(nn.Module):
+    """辅助定位头，输出位置预测"""
+
+    def __init__(self, lstm_output_dim: int, dropout_rate: float):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout_rate)
+        self.linear = nn.Linear(lstm_output_dim, 2)
+
+    def forward(self, x: th.Tensor) -> th.Tensor:
+        return self.linear(self.dropout(x))
+
+
 class AuxRecurrentActorCriticPolicy(RecurrentActorCriticPolicy):
     """带辅助定位头的 Recurrent 策略"""
 
     def __init__(self, *args, **kwargs):
+        self.dropout_rate = kwargs.pop("dropout_rate", 0.5)
         super().__init__(*args, **kwargs)
 
         # 辅助定位头：
         # - 训练时在 evaluate_actions_with_aux() 中用于辅助损失
         # - 推理/分析时在 predict_with_aux() 中输出位置预测
-        self.aux_position_head = nn.Linear(self.lstm_output_dim, 2)
+        self.aux_position_head = AuxPositionHead(
+            self.lstm_output_dim, dropout_rate=self.dropout_rate
+        )
 
     def evaluate_actions_with_aux(
         self,

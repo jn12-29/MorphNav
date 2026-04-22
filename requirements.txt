@@ -21,3 +21,4 @@ gymnasium_robotics
 tensorboard
 wandb
 moviepy>=1.0.0
+zarr

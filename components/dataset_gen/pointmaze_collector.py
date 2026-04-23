@@ -23,8 +23,6 @@ def collect_episode(
             raise ValueError("env_metadata.max_episode_steps must be a positive integer when provided")
 
     obs, info = env.reset(seed=episode_seed)
-    if "qpos" not in info:
-        raise KeyError("Missing required field in reset info: 'qpos'")
 
     expected_obs_keys = tuple(obs.keys())
     expected_obs_key_set = set(expected_obs_keys)
@@ -38,7 +36,12 @@ def collect_episode(
     goals: list[np.ndarray] = []
     infos: list[dict[str, Any]] = []
 
-    last_xy = np.asarray(info["qpos"], dtype=np.float32)[:2]
+    if "qpos" in info:
+        last_xy = np.asarray(info["qpos"], dtype=np.float32)[:2]
+    elif "achieved_goal" in obs:
+        last_xy = np.asarray(obs["achieved_goal"], dtype=np.float32)[:2]
+    else:
+        raise KeyError("Missing required initial position in reset output: expected info['qpos'] or obs['achieved_goal']")
     heading = 0.0
     collision = bool(info.get("collision", False))
     done = False

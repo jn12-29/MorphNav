@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -207,3 +208,44 @@ def test_generate_dataset_removes_stale_shards_before_writing(monkeypatch, tmp_p
     assert not stale_shard_dir.exists()
     assert not stale_shard_file.exists()
     assert untouched.exists()
+
+
+def test_generate_pointmaze_dataset_cli_smoke(tmp_path: Path):
+    script_path = SCRIPT_MODULE_PATH
+    output_dir = tmp_path / "output"
+    env = os.environ.copy()
+    env["MPLCONFIGDIR"] = str(tmp_path / "mplconfig")
+    vendor_dir = Path(__file__).resolve().parents[1] / ".vendor"
+    if vendor_dir.exists():
+        existing_pythonpath = env.get("PYTHONPATH", "")
+        env["PYTHONPATH"] = (
+            f"{vendor_dir}{os.pathsep}{existing_pythonpath}" if existing_pythonpath else str(vendor_dir)
+        )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(script_path),
+            "--output-dir",
+            str(output_dir),
+            "--num-episodes",
+            "2",
+            "--episodes-per-shard",
+            "2",
+            "--dataset-seed",
+            "5",
+            "--max-episode-steps",
+            "8",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+    dataset_dir = output_dir / "pointmaze_mujoco"
+    assert (dataset_dir / "dataset_metadata.json").exists()
+    assert (dataset_dir / "manifest.json").exists()
+    assert any(dataset_dir.glob("shard_*.zarr"))

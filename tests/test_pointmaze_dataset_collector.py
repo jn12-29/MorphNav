@@ -166,7 +166,10 @@ def test_collect_episode_requires_qpos_in_reset_info():
             del info["qpos"]
             return obs, info
 
-    with pytest.raises(KeyError, match="Missing required field in reset info: 'qpos'"):
+    with pytest.raises(
+        KeyError,
+        match="Missing required initial position in reset output: expected info\\['qpos'\\] or obs\\['achieved_goal'\\]",
+    ):
         collect_episode(
             env=MissingResetQposEnv(),
             policy=ConstantPolicy(),

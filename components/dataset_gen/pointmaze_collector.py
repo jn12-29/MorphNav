@@ -15,6 +15,13 @@ def collect_episode(
     env_metadata: dict[str, Any],
     policy_metadata: dict[str, Any],
 ) -> dict[str, Any]:
+    max_steps_raw = env_metadata.get("max_episode_steps")
+    max_steps: int | None = None
+    if max_steps_raw is not None:
+        max_steps = int(max_steps_raw)
+        if max_steps <= 0:
+            raise ValueError("env_metadata.max_episode_steps must be a positive integer when provided")
+
     obs, info = env.reset(seed=episode_seed)
     if "qpos" not in info:
         raise KeyError("Missing required field in reset info: 'qpos'")
@@ -76,6 +83,9 @@ def collect_episode(
             heading = float(np.arctan2(delta[1], delta[0]))
         collision = bool(step_info.get("collision", False))
         last_xy = new_xy
+        if max_steps is not None and len(actions) >= max_steps and not (term or trunc):
+            truncated[-1] = True
+            trunc = True
         done = bool(term or trunc)
 
     episode = {

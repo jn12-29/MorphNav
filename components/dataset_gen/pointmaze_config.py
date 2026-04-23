@@ -4,10 +4,11 @@ from dataclasses import dataclass, field
 @dataclass
 class PointMazeEnvConfig:
     env_id: str = "PointMaze"
-    maze_map_name: str = "open"
+    maze_map_name: str = "OPEN"
     xml_file_path: str = ""
     continuing_task: bool = True
     reset_target: bool = False
+    # Collection-side safety cap; applied by dataset collector, not env constructor kwargs.
     max_episode_steps: int = 1000
     sensor_aware: bool = False
 

@@ -1,7 +1,10 @@
 import numpy as np
 import pytest
 
+from components.dataset_gen.pointmaze_annotation import annotate_episode
 from components.dataset_gen.pointmaze_collector import collect_episode
+from components.dataset_gen.pointmaze_config import PointMazeEnvConfig
+from components.dataset_gen.pointmaze_env_factory import build_pointmaze_env_kwargs, create_pointmaze_env
 from components.dataset_gen.pointmaze_episode import summarize_episode
 
 
@@ -44,6 +47,51 @@ class ConstantPolicy:
         return np.array([0.5, 0.0], dtype=np.float32)
 
 
+class NeverDoneEnv(FakeEnv):
+    def step(self, action):
+        obs, reward, _terminated, _truncated, info = super().step(action)
+        return obs, reward, False, False, info
+
+
+def test_build_pointmaze_env_kwargs_and_create_env(monkeypatch):
+    config = PointMazeEnvConfig(
+        maze_map_name="U_MAZE",
+        continuing_task=False,
+        reset_target=True,
+        max_episode_steps=321,
+        sensor_aware=True,
+        xml_file_path="/tmp/point.xml",
+    )
+    kwargs = build_pointmaze_env_kwargs(config)
+
+    assert kwargs == {
+        "maze_map_name": "U_MAZE",
+        "continuing_task": False,
+        "reset_target": True,
+        "sensor_aware": True,
+        "xml_file_path": "/tmp/point.xml",
+    }
+    assert "max_episode_steps" not in kwargs
+
+    captured = {}
+
+    class DummyPointMazeEnv:
+        def __init__(self, **init_kwargs):
+            captured.update(init_kwargs)
+
+    monkeypatch.setattr(
+        "components.dataset_gen.pointmaze_env_factory._resolve_pointmaze_env_cls",
+        lambda: DummyPointMazeEnv,
+    )
+    create_pointmaze_env(config)
+    assert captured == kwargs
+
+
+def test_pointmaze_env_config_default_maze_map_name_is_uppercase_constant():
+    config = PointMazeEnvConfig()
+    assert config.maze_map_name == "OPEN"
+
+
 def test_collect_episode_returns_normalized_episode():
     env = FakeEnv()
     episode = collect_episode(
@@ -64,6 +112,39 @@ def test_collect_episode_returns_normalized_episode():
     assert episode["summary"]["episode_length"] == 3
     assert episode["summary"]["path_length"] == 2.0
     assert episode["summary"]["goal_reached"] is True
+
+
+def test_collect_episode_can_be_annotated():
+    episode = collect_episode(
+        env=FakeEnv(),
+        policy=ConstantPolicy(),
+        episode_id=10,
+        episode_seed=33,
+        env_metadata={},
+        policy_metadata={},
+    )
+    annotation = annotate_episode(episode)
+
+    assert annotation["agent_xy"].shape == (3, 2)
+    assert annotation["heading"].shape == (3,)
+    assert annotation["goal_xy"].shape == (3, 2)
+    assert annotation["relative_goal"].shape == (3, 2)
+
+
+def test_collect_episode_enforces_max_episode_steps_cap_from_env_metadata():
+    config = PointMazeEnvConfig(max_episode_steps=2)
+    episode = collect_episode(
+        env=NeverDoneEnv(),
+        policy=ConstantPolicy(),
+        episode_id=11,
+        episode_seed=44,
+        env_metadata={"max_episode_steps": config.max_episode_steps},
+        policy_metadata={},
+    )
+
+    assert episode["summary"]["episode_length"] == 2
+    assert episode["terminated"].tolist() == [False, False]
+    assert episode["truncated"].tolist() == [False, True]
 
 
 def test_summarize_episode_raises_on_length_mismatch():

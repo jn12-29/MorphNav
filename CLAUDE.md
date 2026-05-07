@@ -1,6 +1,6 @@
-# CLAUDE.md
+# CLAUDE.md / AGENTS.md
 
-This file guides Claude Code when working in this repository.
+This file guides Claude Code / Coding AGENTS when working in this repository.
 
 ## Repo Summary
 

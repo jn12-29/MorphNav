@@ -3,3 +3,9 @@
 /logs
 /analysis_results
 /recorded_data
+.codex/
+.claude/
+.vendor/
+.pytest_cache/
+.vscode/
+docs/ref

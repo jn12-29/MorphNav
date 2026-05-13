@@ -6,37 +6,32 @@
 - `CLAUDE.md` is a short mistake-prevention note for Claude Code.
 - `AGENTS.md` is intentionally not maintained.
 - The old `docs/superpowers/` plugin documents are no longer the source of truth.
+- `docs/ref/` is local reference material only and is not part of the tracked plan.
 
-## Completed
+## Phase 1: PointMaze Ball Model Offline PI Rehearsal
 
-- PointMaze dataset generator first version.
-- Standalone CLI: `scripts/generate_pointmaze_dataset.py`.
-- Dataset modules under `components/dataset_gen/`.
-- Tests for manifest planning, weak random policy, spatial annotations, collector behavior, Zarr writing, and CLI smoke coverage.
+Detailed plan: [`phase-1-offline-pi-rehearsal.md`](./phase-1-offline-pi-rehearsal.md).
 
-## Current Dataset Contract
+Phase 1 makes the current MuJoCo ball model (`PointMaze`) usable for offline path-integration rehearsal and held-out probing while keeping the existing shared actor-LSTM PI head architecture.
 
-The current PointMaze dataset contract follows the implementation in `components/dataset_gen/` and `scripts/generate_pointmaze_dataset.py`.
+Core commitments:
 
-- Output root: `<output-dir>/<dataset-name>/`.
-- Metadata files: `manifest.json` and `dataset_metadata.json`.
-- Shards: `shard_000000.zarr`, `shard_000001.zarr`, and so on.
-- Step arrays: `step/action`, `step/reward`, `step/terminated`, `step/truncated`, `step/qpos`, `step/qvel`, `step/goal`.
-- Annotation arrays: `annotation/agent_xy`, `annotation/heading`, `annotation/goal_xy`, `annotation/relative_goal`.
-- Episode index arrays: `episode_lengths`, `episode_offsets`.
-- Shard attributes include `dataset_meta_json`, `episode_summaries_json`, and JSON-safe scalar dataset metadata keys.
+- `offline_pi_rehearsal` performs PI-only updates on the current RL model with a separate optimizer.
+- `offline_pi_probe` evaluates held-out PI performance without parameter updates.
+- `obs/*` dataset arrays are action-before policy observations aligned with `step/action`.
+- `achieved_goal` remains in observations as the PI target and is dropped only from policy features.
+- `path_integration_head` must be included in the online PPO optimizer parameter set.
+- Existing online rollout PI behavior in `PathIntegrationRecurrentPPO.train()` is preserved apart from the optimizer membership fix.
+- Phase 1 remains limited to the PointMaze MuJoCo ball model.
 
-The first version does not persist full `obs` or raw `info` payloads into Zarr shards.
+## Phase 2: Separate PI/RL Recurrent Architecture
 
-## In Progress
+After Phase 1 is working, evaluate a new architecture where PI and RL use separate recurrent modules. The PI recurrent representation may be concatenated with other observation features and fed into the RL recurrent path. This phase should be treated as an architecture experiment, not as a prerequisite for offline PI rehearsal.
 
-- `pi_ppo_lstm` path-integration auxiliary training.
-- Core files: `components/path_integration.py`, `components/pi_algo.py`, `components/pi_policy.py`.
-- Training-stack integration: `rl-baselines3-zoo/conf/maze_pi.yml`, `rl-baselines3-zoo/rl_zoo3/utils.py`, and `rl-baselines3-zoo/rl_zoo3/exp_manager.py`.
-- Documentation entry points: `README.md`, `CLAUDE.md`, and `scripts/sb3zoo_train.sh`.
+Key decisions for that phase include whether RL loss can update the PI recurrent module, whether PI representations are detached before entering the RL path, and how to avoid `achieved_goal` leakage.
 
-## Next Steps
+## Phase 3: AntMaze / Embodied Compatibility
 
-- Add minimal PI import/config tests or a smoke check.
-- Verify `pi_ppo_lstm` registration through the local zoo entry point.
-- Decide later whether dataset shards should persist full observations and selected `info` fields.
+After PointMaze ball-model rehearsal is stable, extend the dataset and offline PI path toward embodied agents such as `AntMaze`. The PI target can remain the global xy position, but AntMaze needs an environment adapter, a suitable exploration policy for multi-dimensional actions, and policy-compatible observations for its larger observation/action spaces.
+
+AntMaze support is intentionally deferred until the PointMaze ball-model workflow is complete.

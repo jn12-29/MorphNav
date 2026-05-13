@@ -45,3 +45,6 @@ CUDA_VISIBLE_DEVICES=5 python ./rl-baselines3-zoo/train.py --algo aux_ppo_lstm -
 CUDA_VISIBLE_DEVICES=5 python ./rl-baselines3-zoo/train.py --algo aux_ppo_lstm --env PointMaze -conf ./rl-baselines3-zoo/conf/maze.yml --vec-env subproc -P --tensorboard-log ./logs --eval-freq 10_000 --eval-episodes 32 --n-eval-envs 8 --save-freq 100_000 --env-kwargs continuing_task:False achieved_goal_aware:True target_aware:True sensor_aware:False start_pos_aware:True maze_map_name:"'OPEN'" xml_file_path:"'/home/xh/ai4neuron/MorphNav/envs/assets/point_v1.xml'" success_radius:0.4 --hyperparams n_timesteps:1e7 aux_loss_coef:0.0
 
 # 20260408 AuxRecurrentPPO PointMaze with dropout and fix max speed
+
+# Path-integration auxiliary PPO-LSTM (place-cell prediction branch, actor path unchanged)
+CUDA_VISIBLE_DEVICES=0 python ./rl-baselines3-zoo/train.py --algo pi_ppo_lstm --env PointMaze -conf ./rl-baselines3-zoo/conf/maze_pi.yml --vec-env subproc -P --tensorboard-log ./logs --eval-freq 10_000 --eval-episodes 32 --n-eval-envs 8 --save-freq 100_000 --env-kwargs continuing_task:False achieved_goal_aware:True target_aware:True sensor_aware:False start_pos_aware:True maze_map_name:"'OPEN'" xml_file_path:"'/home/xh/ai4neuron/MorphNav/envs/assets/point_v1.xml'" success_radius:0.4 --hyperparams n_timesteps:1e7

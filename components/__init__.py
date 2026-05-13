@@ -1,3 +1,5 @@
 from .aux_policy import AuxRecurrentActorCriticPolicy
 from .aux_algo import AuxRecurrentPPO
 from .aux_extractor import CustomCombinedExtractor
+from .pi_algo import PathIntegrationRecurrentPPO
+from .pi_policy import PathIntegrationRecurrentActorCriticPolicy

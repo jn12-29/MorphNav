@@ -20,7 +20,7 @@ write_shard = pointmaze_zarr_writer.write_shard
 
 
 def _synthetic_episodes() -> list[dict]:
-    return [
+    episodes = [
         {
             "action": np.array([[0.1, 0.2], [0.3, 0.4]], dtype=np.float32),
             "reward": np.array([1.0, 2.0], dtype=np.float32),
@@ -53,6 +53,30 @@ def _synthetic_episodes() -> list[dict]:
         },
     ]
 
+    for episode in episodes:
+        length = int(episode["reward"].shape[0])
+        achieved_goal = np.asarray(episode["qpos"][:, :2], dtype=np.float32)
+        episode["obs"] = {
+            "observation": np.asarray(episode["qvel"], dtype=np.float32),
+            "start_pos": np.repeat(achieved_goal[:1], length, axis=0),
+            "achieved_goal": achieved_goal,
+            "desired_goal": np.asarray(episode["goal"], dtype=np.float32),
+        }
+        episode["summary"] = {
+            "episode_length": length,
+            "return": float(np.asarray(episode["reward"], dtype=np.float64).sum()),
+            "terminated_reason": "terminated" if bool(episode["terminated"][-1]) else "truncated",
+            "path_length": 1.0,
+            "net_displacement": 1.0,
+            "coverage_score": 1.0,
+            "stuck_ratio": 0.0,
+            "collision_ratio": 0.0,
+            "goal_reached": bool(episode["terminated"][-1]),
+            "mean_speed": 0.5,
+            "mean_turn_rate": 0.0,
+        }
+    return episodes
+
 
 def test_write_shard_writes_offsets_steps_annotations_and_attrs(tmp_path: Path):
     episodes = _synthetic_episodes()
@@ -63,6 +87,7 @@ def test_write_shard_writes_offsets_steps_annotations_and_attrs(tmp_path: Path):
         shard_id=3,
         episodes=episodes,
         dataset_meta=dataset_meta,
+        storage_format="zarr",
     )
 
     assert shard_path.exists()
@@ -78,6 +103,11 @@ def test_write_shard_writes_offsets_steps_annotations_and_attrs(tmp_path: Path):
     assert root["step/goal"].shape == (5, 2)
     assert root["step/terminated"].shape == (5,)
     assert root["step/truncated"].shape == (5,)
+    assert root["obs/observation"].shape == (5, 3)
+    assert root["obs/start_pos"].shape == (5, 2)
+    assert root["obs/achieved_goal"].shape == (5, 2)
+    assert root["obs/desired_goal"].shape == (5, 2)
+    np.testing.assert_array_equal(root["obs/achieved_goal"][:], np.vstack([ep["obs"]["achieved_goal"] for ep in episodes]))
 
     np.testing.assert_array_equal(root["annotation/agent_xy"][:], np.vstack([ep["annotation"]["agent_xy"] for ep in episodes]))
     np.testing.assert_array_equal(root["annotation/heading"][:], np.concatenate([ep["annotation"]["heading"] for ep in episodes]))
@@ -94,8 +124,34 @@ def test_write_shard_writes_offsets_steps_annotations_and_attrs(tmp_path: Path):
     assert len(summaries) == 2
     assert summaries[0]["episode_length"] == 2
     assert summaries[0]["return"] == 3.0
+    assert summaries[0]["terminated_reason"] == "terminated"
+    assert summaries[0]["mean_speed"] == 0.5
     assert summaries[1]["episode_length"] == 3
     assert summaries[1]["return"] == 2.0
+    assert summaries[1]["episode_id_in_shard"] == 1
+
+
+def test_write_shard_can_write_compact_npz(tmp_path: Path):
+    episodes = _synthetic_episodes()
+    dataset_meta = {"dataset_name": "pointmaze-mini", "dataset_schema": "pointmaze_mujoco_zarr", "dataset_schema_version": 1}
+
+    shard_path = write_shard(
+        output_dir=tmp_path,
+        shard_id=2,
+        episodes=episodes,
+        dataset_meta=dataset_meta,
+        storage_format="npz",
+    )
+
+    assert shard_path.name == "shard_000002.npz"
+    with np.load(shard_path, allow_pickle=False) as data:
+        np.testing.assert_array_equal(data["episode_lengths"], np.array([2, 3], dtype=np.int64))
+        assert data["step/action"].shape == (5, 2)
+        assert data["obs/achieved_goal"].shape == (5, 2)
+        stored_meta = json.loads(str(data["dataset_meta_json"]))
+        assert stored_meta["dataset_name"] == "pointmaze-mini"
+        summaries = json.loads(str(data["episode_summaries_json"]))
+        assert summaries[1]["episode_id_in_shard"] == 1
 
 
 def test_write_dataset_metadata_writes_json(tmp_path: Path):
@@ -116,7 +172,7 @@ def test_write_dataset_metadata_writes_json(tmp_path: Path):
 
 def test_write_shard_rejects_empty_episodes(tmp_path: Path):
     with pytest.raises(ValueError, match="non-empty"):
-        write_shard(output_dir=tmp_path, shard_id=0, episodes=[], dataset_meta={})
+        write_shard(output_dir=tmp_path, shard_id=0, episodes=[], dataset_meta={}, storage_format="zarr")
 
 
 def test_write_shard_validates_timestep_alignment(tmp_path: Path):
@@ -124,7 +180,15 @@ def test_write_shard_validates_timestep_alignment(tmp_path: Path):
     episodes[0]["qvel"] = np.array([[0.0, 0.0, 0.0]], dtype=np.float32)
 
     with pytest.raises(ValueError, match="field 'qvel'"):
-        write_shard(output_dir=tmp_path, shard_id=0, episodes=episodes, dataset_meta={})
+        write_shard(output_dir=tmp_path, shard_id=0, episodes=episodes, dataset_meta={}, storage_format="zarr")
+
+
+def test_write_shard_validates_obs_alignment(tmp_path: Path):
+    episodes = _synthetic_episodes()
+    episodes[0]["obs"]["achieved_goal"] = np.zeros((1, 2), dtype=np.float32)
+
+    with pytest.raises(ValueError, match="field 'obs/achieved_goal'"):
+        write_shard(output_dir=tmp_path, shard_id=0, episodes=episodes, dataset_meta={}, storage_format="zarr")
 
 
 def test_write_shard_normalizes_non_scalar_metadata_attrs(tmp_path: Path):
@@ -137,7 +201,7 @@ def test_write_shard_normalizes_non_scalar_metadata_attrs(tmp_path: Path):
         "array_meta": np.array([[1, 2], [3, 4]], dtype=np.int64),
     }
 
-    shard_path = write_shard(output_dir=tmp_path, shard_id=0, episodes=episodes, dataset_meta=dataset_meta)
+    shard_path = write_shard(output_dir=tmp_path, shard_id=0, episodes=episodes, dataset_meta=dataset_meta, storage_format="zarr")
     root = zarr.open_group(str(shard_path), mode="r")
 
     assert root.attrs["seed"] == 7
@@ -164,7 +228,7 @@ def test_write_shard_ignores_reserved_scalar_attr_collisions(tmp_path: Path):
         "episode_summaries_json": "user-overwrite-attempt",
     }
 
-    shard_path = write_shard(output_dir=tmp_path, shard_id=0, episodes=episodes, dataset_meta=dataset_meta)
+    shard_path = write_shard(output_dir=tmp_path, shard_id=0, episodes=episodes, dataset_meta=dataset_meta, storage_format="zarr")
     root = zarr.open_group(str(shard_path), mode="r")
 
     stored_meta = json.loads(root.attrs["dataset_meta_json"])
@@ -182,7 +246,7 @@ def test_write_metadata_rejects_non_finite_float(tmp_path: Path, bad_value: floa
     dataset_meta = {"dataset_name": "pointmaze-mini", "bad": bad_value}
 
     with pytest.raises(ValueError, match="non-finite"):
-        write_shard(output_dir=tmp_path, shard_id=0, episodes=episodes, dataset_meta=dataset_meta)
+        write_shard(output_dir=tmp_path, shard_id=0, episodes=episodes, dataset_meta=dataset_meta, storage_format="zarr")
 
     with pytest.raises(ValueError, match="non-finite"):
         write_dataset_metadata(tmp_path, dataset_meta)

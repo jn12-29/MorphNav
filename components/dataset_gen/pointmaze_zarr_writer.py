@@ -7,7 +7,27 @@ from typing import Any
 import numpy as np
 import zarr
 
+try:
+    from .pointmaze_config import POINTMAZE_POLICY_OBS_KEYS
+except ImportError:  # pragma: no cover - supports direct importlib loading in tests.
+    from components.dataset_gen.pointmaze_config import POINTMAZE_POLICY_OBS_KEYS
+
 _RESERVED_ROOT_ATTRS = frozenset({"dataset_meta_json", "episode_summaries_json"})
+_SHARD_ARRAY_NAMES = (
+    "episode_lengths",
+    "episode_offsets",
+    "step/action",
+    "step/reward",
+    "step/terminated",
+    "step/truncated",
+    "step/qpos",
+    "step/qvel",
+    "step/goal",
+    "annotation/agent_xy",
+    "annotation/heading",
+    "annotation/goal_xy",
+    "annotation/relative_goal",
+)
 
 
 def _to_json_compatible(value: Any) -> Any:
@@ -53,6 +73,14 @@ def _validate_episode_alignment(episode: dict[str, Any], episode_idx: int) -> in
         "annotation/relative_goal": episode["annotation"]["relative_goal"],
     }
 
+    obs = episode.get("obs")
+    if not isinstance(obs, dict):
+        raise KeyError(f"Episode {episode_idx} is missing required 'obs' dict")
+    for key in POINTMAZE_POLICY_OBS_KEYS:
+        if key not in obs:
+            raise KeyError(f"Episode {episode_idx} is missing required obs key {key!r}")
+        fields[f"obs/{key}"] = obs[key]
+
     for field_name, field_value in fields.items():
         field_arr = np.asarray(field_value)
         if field_arr.shape[0] != length:
@@ -78,18 +106,16 @@ def _stack_annotation_field(episodes: list[dict[str, Any]], key: str) -> np.ndar
     return np.concatenate(parts, axis=0)
 
 
-def write_shard(
-    output_dir: Path,
-    shard_id: int,
-    episodes: list[dict],
-    dataset_meta: dict,
-) -> Path:
+def _stack_obs_field(episodes: list[dict[str, Any]], key: str) -> np.ndarray:
+    parts = [np.asarray(ep["obs"][key], dtype=np.float32) for ep in episodes]
+    if not parts:
+        return np.asarray([], dtype=np.float32)
+    return np.concatenate(parts, axis=0)
+
+
+def _build_shard_payload(episodes: list[dict], dataset_meta: dict) -> tuple[dict[str, np.ndarray], dict, list[dict]]:
     if not episodes:
         raise ValueError("episodes must be a non-empty list")
-
-    output_dir = Path(output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
-    shard_path = output_dir / f"shard_{shard_id:06d}.zarr"
 
     lengths = [_validate_episode_alignment(ep, idx) for idx, ep in enumerate(episodes)]
     episode_lengths = np.asarray(lengths, dtype=np.int64)
@@ -105,38 +131,50 @@ def write_shard(
     step_qvel = _stack_episode_field(episodes, "qvel")
     step_goal = _stack_episode_field(episodes, "goal")
 
+    obs_arrays = {key: _stack_obs_field(episodes, key) for key in POINTMAZE_POLICY_OBS_KEYS}
+
     ann_agent_xy = _stack_annotation_field(episodes, "agent_xy")
     ann_heading = _stack_annotation_field(episodes, "heading")
     ann_goal_xy = _stack_annotation_field(episodes, "goal_xy")
     ann_relative_goal = _stack_annotation_field(episodes, "relative_goal")
 
-    root = zarr.open_group(str(shard_path), mode="w")
-    root.create_array("episode_lengths", data=episode_lengths)
-    root.create_array("episode_offsets", data=episode_offsets)
-    root.create_array("step/action", data=step_action)
-    root.create_array("step/reward", data=step_reward)
-    root.create_array("step/terminated", data=step_terminated)
-    root.create_array("step/truncated", data=step_truncated)
-    root.create_array("step/qpos", data=step_qpos)
-    root.create_array("step/qvel", data=step_qvel)
-    root.create_array("step/goal", data=step_goal)
-    root.create_array("annotation/agent_xy", data=ann_agent_xy)
-    root.create_array("annotation/heading", data=ann_heading)
-    root.create_array("annotation/goal_xy", data=ann_goal_xy)
-    root.create_array("annotation/relative_goal", data=ann_relative_goal)
-
     summaries = []
     for idx, ep in enumerate(episodes):
-        rewards = np.asarray(ep["reward"], dtype=np.float64)
-        summaries.append(
-            {
-                "episode_id_in_shard": idx,
-                "episode_length": int(rewards.shape[0]),
-                "return": float(rewards.sum()),
-            }
-        )
+        if "summary" not in ep:
+            raise KeyError(f"Episode {idx} is missing required 'summary'")
+        summary = dict(ep["summary"])
+        summary["episode_id_in_shard"] = idx
+        summaries.append(summary)
 
     normalized_meta = _to_json_compatible(dataset_meta)
+    arrays = {
+        "episode_lengths": episode_lengths,
+        "episode_offsets": episode_offsets,
+        "step/action": step_action,
+        "step/reward": step_reward,
+        "step/terminated": step_terminated,
+        "step/truncated": step_truncated,
+        "step/qpos": step_qpos,
+        "step/qvel": step_qvel,
+        "step/goal": step_goal,
+        "annotation/agent_xy": ann_agent_xy,
+        "annotation/heading": ann_heading,
+        "annotation/goal_xy": ann_goal_xy,
+        "annotation/relative_goal": ann_relative_goal,
+    }
+    for key, value in obs_arrays.items():
+        arrays[f"obs/{key}"] = value
+    return arrays, normalized_meta, summaries
+
+
+def _write_zarr_shard(output_dir: Path, shard_id: int, arrays: dict[str, np.ndarray], normalized_meta: dict, summaries: list[dict]) -> Path:
+    shard_path = output_dir / f"shard_{shard_id:06d}.zarr"
+    root = zarr.open_group(str(shard_path), mode="w")
+    for key in _SHARD_ARRAY_NAMES:
+        root.create_array(key, data=arrays[key])
+    for key in POINTMAZE_POLICY_OBS_KEYS:
+        root.create_array(f"obs/{key}", data=arrays[f"obs/{key}"])
+
     root.attrs["dataset_meta_json"] = json.dumps(normalized_meta, sort_keys=True, allow_nan=False)
     for key, value in normalized_meta.items():
         key_str = str(key)
@@ -147,6 +185,33 @@ def write_shard(
     root.attrs["episode_summaries_json"] = json.dumps(summaries, sort_keys=True, allow_nan=False)
 
     return shard_path
+
+
+def _write_npz_shard(output_dir: Path, shard_id: int, arrays: dict[str, np.ndarray], normalized_meta: dict, summaries: list[dict]) -> Path:
+    shard_path = output_dir / f"shard_{shard_id:06d}.npz"
+    payload = dict(arrays)
+    payload["dataset_meta_json"] = np.asarray(json.dumps(normalized_meta, sort_keys=True, allow_nan=False))
+    payload["episode_summaries_json"] = np.asarray(json.dumps(summaries, sort_keys=True, allow_nan=False))
+    np.savez(file=str(shard_path), **payload)  # type: ignore[arg-type]
+    return shard_path
+
+
+def write_shard(
+    output_dir: Path,
+    shard_id: int,
+    episodes: list[dict],
+    dataset_meta: dict,
+    *,
+    storage_format: str = "npz",
+) -> Path:
+    output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    arrays, normalized_meta, summaries = _build_shard_payload(episodes, dataset_meta)
+    if storage_format == "zarr":
+        return _write_zarr_shard(output_dir, shard_id, arrays, normalized_meta, summaries)
+    if storage_format == "npz":
+        return _write_npz_shard(output_dir, shard_id, arrays, normalized_meta, summaries)
+    raise ValueError("storage_format must be 'zarr' or 'npz'")
 
 
 def write_dataset_metadata(output_dir: Path, dataset_meta: dict) -> Path:

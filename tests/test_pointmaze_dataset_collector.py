@@ -14,10 +14,19 @@ class FakeEnv:
         self.goal = np.array([2.0, 2.0], dtype=np.float32)
         self.reset_seed = None
 
+    def _obs(self, step_idx: int) -> dict[str, np.ndarray]:
+        xy = np.array([float(step_idx), 0.0], dtype=np.float32)
+        return {
+            "observation": np.array([float(step_idx)], dtype=np.float32),
+            "start_pos": np.array([0.0, 0.0], dtype=np.float32),
+            "achieved_goal": xy,
+            "desired_goal": self.goal.copy(),
+        }
+
     def reset(self, seed=None):
         self.step_idx = 0
         self.reset_seed = seed
-        obs = {"observation": np.array([0.0], dtype=np.float32), "desired_goal": self.goal.copy()}
+        obs = self._obs(0)
         info = {
             "qpos": np.array([0.0, 0.0], dtype=np.float32),
             "qvel": np.array([0.0, 0.0], dtype=np.float32),
@@ -30,7 +39,7 @@ class FakeEnv:
         self.step_idx += 1
         qpos = np.array([float(self.step_idx), 0.0], dtype=np.float32)
         qvel = np.array([1.0, 0.0], dtype=np.float32)
-        obs = {"observation": np.array([self.step_idx], dtype=np.float32), "desired_goal": self.goal.copy()}
+        obs = self._obs(self.step_idx)
         info = {
             "qpos": qpos,
             "qvel": qvel,
@@ -42,8 +51,23 @@ class FakeEnv:
 
 
 class ConstantPolicy:
-    def act(self, agent_xy, heading, collision):
-        del agent_xy, heading, collision
+    def act(self, agent_xy, agent_qvel, collision):
+        del agent_xy, agent_qvel, collision
+        return np.array([0.5, 0.0], dtype=np.float32)
+
+
+class RecordingPolicy:
+    def __init__(self) -> None:
+        self.calls = []
+
+    def act(self, agent_xy, agent_qvel, collision):
+        self.calls.append(
+            {
+                "agent_xy": np.asarray(agent_xy, dtype=np.float32).copy(),
+                "agent_qvel": np.asarray(agent_qvel, dtype=np.float32).copy(),
+                "collision": bool(collision),
+            }
+        )
         return np.array([0.5, 0.0], dtype=np.float32)
 
 
@@ -60,7 +84,11 @@ def test_build_pointmaze_env_kwargs_and_create_env(monkeypatch):
         reset_target=True,
         max_episode_steps=321,
         sensor_aware=True,
+        achieved_goal_aware=True,
+        start_pos_aware=True,
+        target_aware=True,
         xml_file_path="/tmp/point.xml",
+        success_radius=0.4,
     )
     kwargs = build_pointmaze_env_kwargs(config)
 
@@ -69,7 +97,11 @@ def test_build_pointmaze_env_kwargs_and_create_env(monkeypatch):
         "continuing_task": False,
         "reset_target": True,
         "sensor_aware": True,
+        "achieved_goal_aware": True,
+        "start_pos_aware": True,
+        "target_aware": True,
         "xml_file_path": "/tmp/point.xml",
+        "success_radius": 0.4,
     }
     assert "max_episode_steps" not in kwargs
 
@@ -107,11 +139,35 @@ def test_collect_episode_returns_normalized_episode():
     assert episode["episode_id"] == 4
     assert episode["seed"] == 101
     assert episode["obs"]["observation"].shape == (3, 1)
+    np.testing.assert_array_equal(episode["obs"]["observation"].reshape(-1), np.array([0.0, 1.0, 2.0]))
+    np.testing.assert_array_equal(
+        episode["obs"]["achieved_goal"],
+        np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]], dtype=np.float32),
+    )
     assert episode["action"].shape == (3, 2)
     assert episode["qpos"].shape == (3, 2)
     assert episode["summary"]["episode_length"] == 3
     assert episode["summary"]["path_length"] == 2.0
     assert episode["summary"]["goal_reached"] is True
+
+
+def test_collect_episode_passes_current_xy_and_qvel_to_policy():
+    policy = RecordingPolicy()
+
+    collect_episode(
+        env=FakeEnv(),
+        policy=policy,
+        episode_id=4,
+        episode_seed=101,
+        env_metadata={"maze_map_name": "U_MAZE"},
+        policy_metadata={"policy_type": "recording"},
+    )
+
+    assert len(policy.calls) == 3
+    np.testing.assert_array_equal(policy.calls[0]["agent_xy"], np.array([0.0, 0.0], dtype=np.float32))
+    np.testing.assert_array_equal(policy.calls[0]["agent_qvel"], np.array([0.0, 0.0], dtype=np.float32))
+    np.testing.assert_array_equal(policy.calls[1]["agent_xy"], np.array([1.0, 0.0], dtype=np.float32))
+    np.testing.assert_array_equal(policy.calls[1]["agent_qvel"], np.array([1.0, 0.0], dtype=np.float32))
 
 
 def test_collect_episode_can_be_annotated():
@@ -159,25 +215,22 @@ def test_summarize_episode_raises_on_length_mismatch():
         )
 
 
-def test_collect_episode_requires_qpos_in_reset_info():
+def test_collect_episode_uses_achieved_goal_when_reset_qpos_is_missing():
     class MissingResetQposEnv(FakeEnv):
         def reset(self, seed=None):
             obs, info = super().reset(seed=seed)
             del info["qpos"]
             return obs, info
 
-    with pytest.raises(
-        KeyError,
-        match="Missing required initial position in reset output: expected info\\['qpos'\\] or obs\\['achieved_goal'\\]",
-    ):
-        collect_episode(
-            env=MissingResetQposEnv(),
-            policy=ConstantPolicy(),
-            episode_id=0,
-            episode_seed=1,
-            env_metadata={},
-            policy_metadata={},
-        )
+    episode = collect_episode(
+        env=MissingResetQposEnv(),
+        policy=ConstantPolicy(),
+        episode_id=0,
+        episode_seed=1,
+        env_metadata={},
+        policy_metadata={},
+    )
+    assert episode["summary"]["episode_length"] == 3
 
 
 def test_collect_episode_raises_when_observation_keys_change():
@@ -198,14 +251,14 @@ def test_collect_episode_raises_when_observation_keys_change():
         )
 
 
-def test_collect_episode_requires_desired_goal_in_step_obs():
+def test_collect_episode_requires_policy_obs_keys_in_step_obs():
     class MissingGoalObsEnv(FakeEnv):
         def step(self, action):
             obs, reward, terminated, truncated, info = super().step(action)
             del obs["desired_goal"]
             return obs, reward, terminated, truncated, info
 
-    with pytest.raises(KeyError, match="Missing required field in step observation: 'desired_goal'"):
+    with pytest.raises(ValueError, match="Observation keys changed across steps"):
         collect_episode(
             env=MissingGoalObsEnv(),
             policy=ConstantPolicy(),
@@ -240,6 +293,8 @@ def test_collect_episode_accepts_reordered_equivalent_observation_keys():
             obs, reward, terminated, truncated, info = super().step(action)
             reordered = {
                 "desired_goal": obs["desired_goal"],
+                "achieved_goal": obs["achieved_goal"],
+                "start_pos": obs["start_pos"],
                 "observation": obs["observation"],
             }
             return reordered, reward, terminated, truncated, info

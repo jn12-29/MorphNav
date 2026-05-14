@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from typing import cast
+
 import numpy as np
 import torch as th
 from gymnasium import spaces
 from stable_baselines3.common.distributions import Distribution
+from stable_baselines3.common.policies import BaseModel
 from sb3_contrib.common.recurrent.policies import RecurrentActorCriticPolicy
 from sb3_contrib.common.recurrent.type_aliases import RNNStates
 
@@ -38,6 +41,43 @@ class PathIntegrationRecurrentActorCriticPolicy(RecurrentActorCriticPolicy):
             pos_max=self.pi_pos_max,
             seed=self.pi_neurons_seed,
         )
+        self._ensure_path_integration_head_in_optimizer()
+
+    def _ensure_path_integration_head_in_optimizer(self) -> None:
+        head_params = [param for param in self.path_integration_head.parameters() if param.requires_grad]
+        if not head_params:
+            return
+        optimizer_param_ids = {id(param) for group in self.optimizer.param_groups for param in group["params"]}
+        missing = [param for param in head_params if id(param) not in optimizer_param_ids]
+        if missing:
+            self.optimizer.add_param_group({"params": missing})
+
+    def _extract_actor_features(self, obs) -> th.Tensor:
+        return BaseModel.extract_features(self, obs, self.pi_features_extractor)
+
+    def _forward_actor_lstm(
+        self,
+        obs,
+        lstm_states_pi: tuple[th.Tensor, th.Tensor],
+        episode_starts: th.Tensor,
+    ) -> tuple[th.Tensor, tuple[th.Tensor, th.Tensor]]:
+        pi_features = self._extract_actor_features(obs)
+        latent_pi, new_states = self._process_sequence(
+            pi_features,
+            lstm_states_pi,
+            episode_starts,
+            self.lstm_actor,
+        )
+        return latent_pi, cast(tuple[th.Tensor, th.Tensor], new_states)
+
+    def forward_pi(
+        self,
+        obs,
+        lstm_states_pi: tuple[th.Tensor, th.Tensor],
+        episode_starts: th.Tensor,
+    ) -> tuple[PathIntegrationOutputs, tuple[th.Tensor, th.Tensor]]:
+        latent_pi, lstm_states_pi = self._forward_actor_lstm(obs, lstm_states_pi, episode_starts)
+        return self.path_integration_head(latent_pi), lstm_states_pi
 
     def evaluate_actions_with_pi(
         self,
@@ -88,12 +128,10 @@ class PathIntegrationRecurrentActorCriticPolicy(RecurrentActorCriticPolicy):
         lstm_states: tuple[th.Tensor, th.Tensor],
         episode_starts: th.Tensor,
     ) -> tuple[Distribution, tuple[th.Tensor, ...], PathIntegrationOutputs]:
-        features = super().extract_features(obs, self.pi_features_extractor)
-        latent_pi, lstm_states = self._process_sequence(
-            features,
+        latent_pi, lstm_states = self._forward_actor_lstm(
+            obs,
             lstm_states,
             episode_starts,
-            self.lstm_actor,
         )
         pi_outputs = self.path_integration_head(latent_pi)
         latent_pi = self.mlp_extractor.forward_actor(latent_pi)

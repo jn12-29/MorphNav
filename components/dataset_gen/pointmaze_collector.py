@@ -4,7 +4,25 @@ from typing import Any
 
 import numpy as np
 
+from .pointmaze_config import POINTMAZE_POLICY_OBS_KEYS
 from .pointmaze_episode import summarize_episode
+
+
+def _validate_policy_obs(obs: dict[str, Any], expected_shapes: dict[str, tuple[int, ...]] | None = None) -> None:
+    missing = [key for key in POINTMAZE_POLICY_OBS_KEYS if key not in obs]
+    if missing:
+        raise KeyError(f"Missing required policy observation keys: {missing}")
+
+    for key in POINTMAZE_POLICY_OBS_KEYS:
+        arr = np.asarray(obs[key])
+        if expected_shapes is not None and arr.shape != expected_shapes[key]:
+            raise ValueError(
+                f"Observation shape changed for key {key!r}: expected {expected_shapes[key]}, got {arr.shape}"
+            )
+
+    achieved_goal = np.asarray(obs["achieved_goal"])
+    if achieved_goal.shape[-1:] != (2,):
+        raise ValueError(f"obs['achieved_goal'] must provide a 2D PI target, got shape {achieved_goal.shape}")
 
 
 def collect_episode(
@@ -24,9 +42,11 @@ def collect_episode(
 
     obs, info = env.reset(seed=episode_seed)
 
+    _validate_policy_obs(obs)
     expected_obs_keys = tuple(obs.keys())
     expected_obs_key_set = set(expected_obs_keys)
-    obs_buffer: dict[str, list[np.ndarray]] = {key: [] for key in expected_obs_keys}
+    expected_policy_obs_shapes = {key: np.asarray(obs[key]).shape for key in POINTMAZE_POLICY_OBS_KEYS}
+    obs_buffer: dict[str, list[np.ndarray]] = {key: [] for key in POINTMAZE_POLICY_OBS_KEYS}
     actions: list[np.ndarray] = []
     rewards: list[float] = []
     terminated: list[bool] = []
@@ -42,34 +62,37 @@ def collect_episode(
         last_xy = np.asarray(obs["achieved_goal"], dtype=np.float32)[:2]
     else:
         raise KeyError("Missing required initial position in reset output: expected info['qpos'] or obs['achieved_goal']")
-    heading = 0.0
+    if "qvel" in info:
+        last_qvel = np.asarray(info["qvel"], dtype=np.float32)[:2]
+    else:
+        last_qvel = np.asarray(obs["observation"], dtype=np.float32)[:2]
     collision = bool(info.get("collision", False))
     done = False
 
     while not done:
+        _validate_policy_obs(obs, expected_policy_obs_shapes)
+        for key in POINTMAZE_POLICY_OBS_KEYS:
+            obs_buffer[key].append(np.asarray(obs[key], dtype=np.float32))
+
         action = np.asarray(
-            policy.act(agent_xy=last_xy, heading=heading, collision=collision),
+            policy.act(agent_xy=last_xy, agent_qvel=last_qvel, collision=collision),
             dtype=np.float32,
         )
+        goal = np.asarray(obs["desired_goal"], dtype=np.float32)
         next_obs, reward, term, trunc, step_info = env.step(action)
-        if "desired_goal" not in next_obs:
-            raise KeyError("Missing required field in step observation: 'desired_goal'")
         next_obs_keys = tuple(next_obs.keys())
         if set(next_obs_keys) != expected_obs_key_set:
             raise ValueError(
                 f"Observation keys changed across steps: expected {expected_obs_keys}, got {next_obs_keys}"
             )
+        _validate_policy_obs(next_obs, expected_policy_obs_shapes)
         if "qpos" not in step_info:
             raise KeyError("Missing required field in step info: 'qpos'")
         if "qvel" not in step_info:
             raise KeyError("Missing required field in step info: 'qvel'")
 
-        for key in expected_obs_keys:
-            obs_buffer[key].append(np.asarray(next_obs[key], dtype=np.float32))
-
         step_qpos = np.asarray(step_info["qpos"], dtype=np.float32)
         step_qvel = np.asarray(step_info["qvel"], dtype=np.float32)
-        goal = np.asarray(next_obs["desired_goal"], dtype=np.float32)
 
         actions.append(action)
         rewards.append(float(reward))
@@ -81,15 +104,14 @@ def collect_episode(
         infos.append(dict(step_info))
 
         new_xy = step_qpos[:2]
-        delta = new_xy - last_xy
-        if float(np.linalg.norm(delta)) > 0.0:
-            heading = float(np.arctan2(delta[1], delta[0]))
         collision = bool(step_info.get("collision", False))
         last_xy = new_xy
+        last_qvel = step_qvel[:2]
         if max_steps is not None and len(actions) >= max_steps and not (term or trunc):
             truncated[-1] = True
             trunc = True
         done = bool(term or trunc)
+        obs = next_obs
 
     episode = {
         "episode_id": int(episode_id),

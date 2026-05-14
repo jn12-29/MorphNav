@@ -64,6 +64,8 @@ Use different seeds by convention:
 - `pi_rehearsal_dataset`: `dataset_seed = S`
 - `pi_probe_dataset`: `dataset_seed = S + 1`
 
+For grid-cells-torch-scale Phase 1 runs, use 10k rehearsal episodes and 4k probe episodes with `episodes_per_shard=1000` and compact NPZ storage.
+
 Do not add a combined split manifest unless a later workflow needs it.
 
 ### Metadata
@@ -74,6 +76,14 @@ Add dataset schema fields to `dataset_metadata.json` and shard `dataset_meta_jso
 - `dataset_schema_version`: `1`
 
 This schema version includes the selected policy-compatible `obs/*` arrays listed below.
+
+Dataset metadata should record the data-collection policy as `GridCellRandomWalkForceDriver` and persist its motion and force-control parameters in `policy_params`.
+
+### Collection Policy
+
+Phase 1 PointMaze datasets use a grid-cells-style smooth velocity random walk tracked through the environment's global `x/y` motor action space. The driver samples a correlated heading process and positive speed like the synthetic random-walk reference workflow, converts them to a desired velocity, and uses current `qvel` feedback to emit clipped two-dimensional force actions. Boundary handling reflects the desired heading/velocity instead of pulling trajectories toward the center.
+
+Do not use egocentric command semantics for PointMaze dataset generation. The PointMaze MuJoCo model exposes two global slide-joint motor actions.
 
 ### Required Arrays
 
@@ -114,6 +124,8 @@ For each episode:
 - each later `obs/*` row is the observation returned by the previous environment step;
 - the final post-step observation after the last action is not required for Phase 1.
 
+The first policy action receives `agent_xy` and `agent_qvel` from the same `env.reset(...)` output; later actions receive them from the previous `env.step(...)` info. The collection policy does not set the initial position.
+
 This keeps offline PI sequence inputs aligned with online SB3 rollout observations.
 
 ### Episode Summaries
@@ -144,12 +156,13 @@ Required summary fields:
 6. Validate that the selected observation keys remain stable within an episode.
 7. Write `obs/*` arrays in `write_shard(...)` with the same offsets as `step/*` arrays.
 8. Write dataset schema fields to `dataset_metadata.json` and shard metadata.
-9. Persist complete collector summaries in `episode_summaries_json`.
-10. Update `README.md` only after the implementation contract changes, and keep user-facing commands minimal instead of duplicating the full preset everywhere.
+9. Persist collection policy parameters and complete collector summaries in `episode_summaries_json`.
+10. Provide a dataset distribution analysis command that writes coverage/action plots before offline PI training.
+11. Update `README.md` only after the implementation contract changes, and keep user-facing commands minimal instead of duplicating the full preset everywhere.
 
 ## Offline Batch Contract
 
-Implement a modular batch source that reads PointMaze Zarr shards and yields padded recurrent batches.
+Implement a modular batch source that reads PointMaze dataset shards and yields padded recurrent batches. Compact NPZ shards are the default storage format; directory-style Zarr shards remain readable for existing datasets.
 
 Target module:
 
@@ -281,7 +294,7 @@ Metrics should use a separate namespace, for example:
 1. Fix the `path_integration_head` optimizer membership for online PPO and add a targeted test.
 2. Lock dataset schema fields and selected policy observation arrays.
 3. Change collection to record action-before `obs/*` rows.
-4. Write `obs/*`, schema metadata, and complete episode summaries to Zarr.
+4. Write `obs/*`, schema metadata, and complete episode summaries to compact NPZ shards by default.
 5. Add offline PI batch loading with padded recurrent sequence outputs.
 6. Add `forward_pi(...)` and `compute_offline_pi_loss(...)`.
 7. Add `make_offline_pi_optimizer(...)`, `run_offline_pi_rehearsal(...)`, and `run_offline_pi_probe(...)`.
@@ -306,6 +319,8 @@ Metrics should use a separate namespace, for example:
 - `obs/start_pos` and `obs/desired_goal` shapes match the target RL observation space instead of being hard-coded to 2D.
 - Dataset metadata contains `dataset_schema` and `dataset_schema_version`.
 - `episode_summaries_json` includes all required summary fields.
+- Dataset metadata records `GridCellRandomWalkForceDriver` and its motion/force-control parameters.
+- Dataset distribution analysis reports occupancy coverage, action statistics, and trajectory previews.
 
 ### Batch Source Tests
 
@@ -331,7 +346,7 @@ Metrics should use a separate namespace, for example:
 - `offline_pi_rehearsal` changes at least one PI-path parameter.
 - `offline_pi_rehearsal` leaves action/value head parameters unchanged.
 - PPO optimizer `state_dict()` remains unchanged after offline rehearsal.
-- A minimal Zarr-to-PI smoke test runs `load_offline_pi_batches(...) -> forward_pi(...) -> compute_offline_pi_loss(...) -> offline_pi_rehearsal/probe`.
+- A minimal shard-to-PI smoke test runs `load_offline_pi_batches(...) -> forward_pi(...) -> compute_offline_pi_loss(...) -> offline_pi_rehearsal/probe`.
 
 ## Success Criteria
 

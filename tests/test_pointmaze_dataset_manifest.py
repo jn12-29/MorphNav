@@ -117,12 +117,22 @@ def test_generate_pointmaze_dataset_cli_help_surface():
     help_text = result.stdout
     for flag in (
         "--output-dir",
+        "--preset",
         "--dataset-name",
         "--num-episodes",
         "--episodes-per-shard",
+        "--storage-format",
         "--dataset-seed",
         "--maze-map-name",
+        "--xml-file-path",
         "--max-episode-steps",
+        "--continuing-task",
+        "--reset-target",
+        "--sensor-aware",
+        "--achieved-goal-aware",
+        "--start-pos-aware",
+        "--target-aware",
+        "--success-radius",
     ):
         assert flag in help_text
 
@@ -135,8 +145,14 @@ def test_generate_dataset_removes_stale_shards_before_writing(monkeypatch, tmp_p
     untouched = tmp_path / "dataset" / "shard_notes.zarr"
     untouched.write_text("keep", encoding="utf-8")
 
+    envs = []
+
     class _DummyEnv:
+        def __init__(self):
+            self.close_count = 0
+
         def close(self):
+            self.close_count += 1
             return None
 
     class _DummyPolicy:
@@ -146,13 +162,16 @@ def test_generate_dataset_removes_stale_shards_before_writing(monkeypatch, tmp_p
 
     @dataclass
     class _PolicyConfig:
-        turn_bias: float = 0.0
+        speed_mean: float = 0.25
 
     monkeypatch.setattr(
         "components.dataset_gen.pointmaze_manifest.build_episode_plan",
         lambda dataset_seed, num_episodes, episodes_per_shard: EpisodePlan(
             dataset_seed=dataset_seed,
-            episodes=[EpisodePlanItem(episode_id=0, shard_id=0, episode_seed=111)],
+            episodes=[
+                EpisodePlanItem(episode_id=0, shard_id=0, episode_seed=111),
+                EpisodePlanItem(episode_id=1, shard_id=0, episode_seed=222),
+            ],
         ),
     )
     monkeypatch.setattr(
@@ -160,8 +179,13 @@ def test_generate_dataset_removes_stale_shards_before_writing(monkeypatch, tmp_p
         lambda plan, path: path.write_text("{}", encoding="utf-8"),
     )
     monkeypatch.setattr("components.dataset_gen.pointmaze_env_factory.build_pointmaze_env_kwargs", lambda config: {})
-    monkeypatch.setattr("components.dataset_gen.pointmaze_env_factory.create_pointmaze_env", lambda config: _DummyEnv())
-    monkeypatch.setattr("components.dataset_gen.pointmaze_policy.WeakRandomPolicyDriver", _DummyPolicy)
+    def _create_env(config):
+        env = _DummyEnv()
+        envs.append(env)
+        return env
+
+    monkeypatch.setattr("components.dataset_gen.pointmaze_env_factory.create_pointmaze_env", _create_env)
+    monkeypatch.setattr("components.dataset_gen.pointmaze_policy.GridCellRandomWalkForceDriver", _DummyPolicy)
     monkeypatch.setattr(
         "components.dataset_gen.pointmaze_collector.collect_episode",
         lambda **kwargs: {
@@ -186,7 +210,7 @@ def test_generate_dataset_removes_stale_shards_before_writing(monkeypatch, tmp_p
         },
     )
     fake_zarr_writer = types.ModuleType("components.dataset_gen.pointmaze_zarr_writer")
-    fake_zarr_writer.write_shard = lambda output_dir, shard_id, episodes, dataset_meta: (
+    fake_zarr_writer.write_shard = lambda output_dir, shard_id, episodes, dataset_meta, storage_format="zarr": (
         output_dir / f"shard_{shard_id:06d}.zarr"
     ).mkdir()
     fake_zarr_writer.write_dataset_metadata = lambda output_dir, dataset_meta: (output_dir / "dataset_metadata.json").write_text(
@@ -196,7 +220,7 @@ def test_generate_dataset_removes_stale_shards_before_writing(monkeypatch, tmp_p
     monkeypatch.setitem(sys.modules, "components.dataset_gen.pointmaze_zarr_writer", fake_zarr_writer)
 
     config = SimpleNamespace(
-        output=SimpleNamespace(output_dir=str(tmp_path), dataset_name="dataset", episodes_per_shard=1),
+        output=SimpleNamespace(output_dir=str(tmp_path), dataset_name="dataset", episodes_per_shard=2, storage_format="zarr"),
         env=SimpleNamespace(env_id="PointMaze", maze_map_name="OPEN", max_episode_steps=1000),
         policy=_PolicyConfig(),
         dataset_seed=0,
@@ -208,6 +232,8 @@ def test_generate_dataset_removes_stale_shards_before_writing(monkeypatch, tmp_p
     assert not stale_shard_dir.exists()
     assert not stale_shard_file.exists()
     assert untouched.exists()
+    assert len(envs) == 1
+    assert envs[0].close_count == 1
 
 
 def test_generate_pointmaze_dataset_cli_smoke(tmp_path: Path):
@@ -248,4 +274,13 @@ def test_generate_pointmaze_dataset_cli_smoke(tmp_path: Path):
     dataset_dir = output_dir / "pointmaze_mujoco"
     assert (dataset_dir / "dataset_metadata.json").exists()
     assert (dataset_dir / "manifest.json").exists()
-    assert any(dataset_dir.glob("shard_*.zarr"))
+    shard_paths = sorted(dataset_dir.glob("shard_*.npz"))
+    assert shard_paths
+
+    metadata = json.loads((dataset_dir / "dataset_metadata.json").read_text(encoding="utf-8"))
+    assert metadata["dataset_schema"] == "pointmaze_mujoco_zarr"
+    assert metadata["dataset_schema_version"] == 1
+    assert metadata["storage_format"] == "npz"
+    with np.load(shard_paths[0], allow_pickle=False) as data:
+        assert data["obs/observation"].shape[0] == int(data["episode_lengths"].sum())
+        assert data["obs/achieved_goal"].shape[-1] == 2

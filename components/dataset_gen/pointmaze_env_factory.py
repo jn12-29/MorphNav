@@ -9,6 +9,11 @@ if TYPE_CHECKING:
 
 
 def build_pointmaze_env_kwargs(config: PointMazeEnvConfig) -> dict[str, Any]:
+    if config.env_id != "PointMaze":
+        raise ValueError(f"PointMaze dataset generation only supports env_id='PointMaze', got {config.env_id!r}")
+    if not config.achieved_goal_aware:
+        raise ValueError("Phase 1 PointMaze PI datasets require achieved_goal_aware=True")
+
     # max_episode_steps is intentionally excluded from env kwargs.
     # It is used as collector control metadata to cap rollout length.
     kwargs: dict[str, Any] = {
@@ -16,9 +21,14 @@ def build_pointmaze_env_kwargs(config: PointMazeEnvConfig) -> dict[str, Any]:
         "continuing_task": config.continuing_task,
         "reset_target": config.reset_target,
         "sensor_aware": config.sensor_aware,
+        "achieved_goal_aware": config.achieved_goal_aware,
+        "start_pos_aware": config.start_pos_aware,
+        "target_aware": config.target_aware,
     }
     if config.xml_file_path:
         kwargs["xml_file_path"] = config.xml_file_path
+    if config.success_radius is not None:
+        kwargs["success_radius"] = config.success_radius
     return kwargs
 
 

@@ -4,32 +4,65 @@
 
 Follow `scripts/build_conda_env.sh`.
 
-## PointMaze Dataset Generation
+## PointMaze Offline PI Dataset Generation
 
-The standalone generator writes the current dataset format implemented by `components/dataset_gen/`.
+The standalone generator writes the current PointMaze dataset schema implemented by `components/dataset_gen/`. Use the Phase 1 preset for offline path-integration rehearsal/probe data. The preset samples trajectories with a grid-cells-style smooth velocity random walk, then uses a PointMaze global `x/y` force controller to track that desired velocity through MuJoCo dynamics. The default storage is compact NPZ shards to avoid directory-style Zarr small-file overhead.
 
 ```bash
 python scripts/generate_pointmaze_dataset.py \
+  --preset phase1_pointmaze_pi \
   --output-dir recorded_data \
-  --dataset-name pointmaze_mujoco \
-  --num-episodes 1000 \
-  --episodes-per-shard 100 \
-  --dataset-seed 0 \
-  --maze-map-name OPEN \
-  --max-episode-steps 1000
+  --dataset-name pointmaze_mujoco_pi_rehearsal \
+  --num-episodes 10000 \
+  --episodes-per-shard 1000 \
+  --dataset-seed 0
 ```
 
-This writes to `<output-dir>/<dataset-name>/`:
+Use `--dataset-name pointmaze_mujoco_pi_probe --num-episodes 4000 --dataset-seed 1` for a held-out probe dataset.
+
+The generation command writes to `<output-dir>/<dataset-name>/`:
 
 - `manifest.json`
 - `dataset_metadata.json`
-- `shard_000000.zarr`, `shard_000001.zarr`, and so on
+- `shard_000000.npz`, `shard_000001.npz`, and so on
 
-Shard arrays include `episode_lengths`, `episode_offsets`, `step/action`, `step/reward`, `step/terminated`, `step/truncated`, `step/qpos`, `step/qvel`, `step/goal`, `annotation/agent_xy`, `annotation/heading`, `annotation/goal_xy`, and `annotation/relative_goal`.
+Shard arrays include `episode_lengths`, `episode_offsets`, `step/action`, `step/reward`, `step/terminated`, `step/truncated`, `step/qpos`, `step/qvel`, `step/goal`, `obs/observation`, `obs/start_pos`, `obs/achieved_goal`, `obs/desired_goal`, `annotation/agent_xy`, `annotation/heading`, `annotation/goal_xy`, and `annotation/relative_goal`.
 
-Shard attributes include `dataset_meta_json`, `episode_summaries_json`, and JSON-safe scalar dataset metadata keys.
+Each shard includes `dataset_meta_json` and `episode_summaries_json` entries. Use `--storage-format zarr` only when directory-style Zarr output is explicitly needed.
 
-The current first version does not persist full `obs` or raw `info` payloads into Zarr shards.
+`obs/*` rows are action-before policy observations aligned one-to-one with `step/action`. Raw `info` payloads are not persisted.
+
+Validate dataset coverage before training:
+
+```bash
+python scripts/analyze_pointmaze_dataset.py \
+  --dataset-root recorded_data/pointmaze_mujoco_pi_rehearsal \
+  --output-dir logs/offline_pi/pointmaze_phase1_seed0/dataset_analysis
+```
+
+The validation command writes `dataset_distribution.json`, `occupancy.png`, `action_hist.png`, and `trajectory_preview.png` directly under its `--output-dir`.
+
+## Offline PI Rehearsal
+
+Offline rehearsal trains only the PI path of `pi_ppo_lstm` using place-cell cross-entropy. MSE is reported only as a localization metric.
+
+```bash
+python scripts/offline_pi_rehearsal.py \
+  --mode train \
+  --dataset-root recorded_data/pointmaze_mujoco_pi_rehearsal \
+  --probe-dataset-root recorded_data/pointmaze_mujoco_pi_probe \
+  --output-dir logs/offline_pi/pointmaze_phase1_seed0 \
+  --epochs 1
+```
+
+Analyze offline PI bottleneck spatial representations:
+
+```bash
+python scripts/analyze_offline_pi_representations.py \
+  --model-path logs/offline_pi/pointmaze_phase1_seed0/final_model.zip \
+  --dataset-root recorded_data/pointmaze_mujoco_pi_probe \
+  --output-dir logs/offline_pi/pointmaze_phase1_seed0/analysis
+```
 
 ## Train
 

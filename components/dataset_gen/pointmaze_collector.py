@@ -1,3 +1,10 @@
+"""Episode collection for PointMaze offline PI datasets.
+
+`obs/*` rows are action-before policy observations aligned one-to-one with
+`step/action`. `achieved_goal` remains in the offline observation dict because
+it is the PI supervision target.
+"""
+
 from __future__ import annotations
 
 from typing import Any

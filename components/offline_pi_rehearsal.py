@@ -1,3 +1,11 @@
+"""Offline PointMaze PI rehearsal and probe helpers.
+
+This module trains or evaluates only the PI path of the current `pi_ppo_lstm`
+model. The optimization loss is place-cell cross-entropy; coordinate MSE is
+reported only as a localization metric, and offline rehearsal uses an optimizer
+separate from PPO.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

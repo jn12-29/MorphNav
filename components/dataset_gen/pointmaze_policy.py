@@ -1,3 +1,12 @@
+"""Collection policy for PointMaze offline PI datasets.
+
+`GridCellRandomWalkForceDriver` is a grid-cells-style smooth velocity random
+walk tracked through the environment's global x/y motor action space. Touch
+recovery uses observable touch sensors with tangent-biased motion and bounded
+jitter; it does not use egocentric commands, hard-coded arena reflection,
+synthetic collisions, or random heading resampling in the touch branch.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass

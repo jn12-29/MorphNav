@@ -1,3 +1,11 @@
+"""PointMaze dataset schema constants and Phase 1 preset.
+
+The Phase 1 preset owns the dataset-generation environment defaults that must
+match the target `pi_ppo_lstm` run: sensor-aware PointMaze with `achieved_goal`,
+`start_pos`, and `desired_goal` present in observations. Compact NPZ shards are
+the default storage format.
+"""
+
 from dataclasses import dataclass, field
 from pathlib import Path
 

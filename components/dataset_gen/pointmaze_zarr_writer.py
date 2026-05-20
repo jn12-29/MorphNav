@@ -1,3 +1,10 @@
+"""Shard writer for PointMaze offline PI datasets.
+
+Writes the stable `step/*`, `annotation/*`, and policy `obs/*` arrays plus
+schema metadata and complete episode summaries. Raw env `info` payloads are not
+serialized in Phase 1.
+"""
+
 from __future__ import annotations
 
 import json

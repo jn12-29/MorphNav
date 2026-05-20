@@ -1,3 +1,10 @@
+"""PPO-LSTM with an online path-integration auxiliary loss.
+
+`achieved_goal` remains in rollout observations as the PI target. Drop it only
+from policy features through the configured extractor; do not remove it before
+`train()`.
+"""
+
 from __future__ import annotations
 
 from typing import ClassVar

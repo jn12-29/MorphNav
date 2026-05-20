@@ -27,7 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-path", type=Path, default=None)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--batch-size-sequences", type=int, default=16)
-    parser.add_argument("--max-seq-len", type=int, default=128)
+    parser.add_argument("--max-seq-len", type=int, default=1000)
     parser.add_argument("--max-updates", type=int, default=None)
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)

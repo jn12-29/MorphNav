@@ -31,7 +31,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--dataset-root", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--batch-size-sequences", type=int, default=16)
-    parser.add_argument("--max-seq-len", type=int, default=128)
+    parser.add_argument("--max-seq-len", type=int, default=1000)
     parser.add_argument("--n-bins", type=int, default=32)
     parser.add_argument("--bounds", type=float, nargs=4, default=None, metavar=("MIN_X", "MAX_X", "MIN_Y", "MAX_Y"))
     parser.add_argument("--max-steps", type=int, default=None)

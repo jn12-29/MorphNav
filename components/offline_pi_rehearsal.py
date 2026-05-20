@@ -11,7 +11,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path
-from typing import Any, Iterator
+import time
+from typing import Any, Callable, Iterator
 
 import numpy as np
 import torch as th
@@ -35,6 +36,14 @@ class OfflinePIBatch:
     lstm_states_pi: tuple[th.Tensor, th.Tensor]
     sequence_count: int
     max_len: int
+
+
+@dataclass(frozen=True)
+class OfflinePICoordinatePredictions:
+    pred_xy: th.Tensor
+    target_xy: th.Tensor
+    mask: th.Tensor
+    metrics: dict[str, float]
 
 
 @dataclass(frozen=True)
@@ -94,6 +103,18 @@ def _load_shard_sequences(shard_path: Path, obs_keys: tuple[str, ...]) -> tuple[
     return _load_zarr_shard(shard_path, obs_keys)
 
 
+def _load_shard_lengths(shard_path: Path) -> np.ndarray:
+    if shard_path.suffix == ".npz":
+        with np.load(shard_path, allow_pickle=False) as data:
+            metadata = json.loads(str(data["dataset_meta_json"]))
+            _validate_shard_schema_values(metadata.get("dataset_schema"), metadata.get("dataset_schema_version"), shard_path)
+            return np.asarray(data["episode_lengths"], dtype=np.int64)
+
+    root = zarr.open_group(str(shard_path), mode="r")
+    _validate_shard_schema(root, shard_path)
+    return np.asarray(root["episode_lengths"][:], dtype=np.int64)
+
+
 def _load_sequences(dataset_root: str | Path, obs_keys: tuple[str, ...], target_key: str, max_seq_len: int | None) -> list[_OfflinePISequence]:
     dataset_root = Path(dataset_root)
 
@@ -116,6 +137,21 @@ def _load_sequences(dataset_root: str | Path, obs_keys: tuple[str, ...], target_
                 sequences.append(_OfflinePISequence(obs=seq_obs, target_pos=target_pos, length=end - start))
 
     return sequences
+
+
+def count_offline_pi_sequences(dataset_root: str | Path, *, max_seq_len: int | None = None) -> int:
+    if max_seq_len is not None and max_seq_len <= 0:
+        raise ValueError("max_seq_len must be positive when provided")
+
+    window = max_seq_len
+    count = 0
+    for shard_path in _shard_paths(Path(dataset_root)):
+        lengths = _load_shard_lengths(shard_path)
+        if window is None:
+            count += int(lengths.shape[0])
+        else:
+            count += int(np.ceil(lengths.astype(np.float64) / float(window)).sum())
+    return count
 
 
 def _make_batch(
@@ -193,6 +229,47 @@ def load_offline_pi_batches(
         )
 
 
+def _aggregate_coordinate_metrics(
+    pred_xy: th.Tensor,
+    target_xy: th.Tensor,
+    mask: th.Tensor,
+) -> dict[str, float]:
+    valid = mask.bool()
+    if not th.any(valid):
+        return {"mse": 0.0, "rmse": 0.0, "mae": 0.0, "x_mae": 0.0, "y_mae": 0.0}
+
+    diff = pred_xy[valid] - target_xy[valid].to(dtype=pred_xy.dtype)
+    per_step_mse = diff.square().mean(dim=-1)
+    abs_diff = diff.abs()
+    mse = per_step_mse.mean()
+    return {
+        "mse": float(mse.detach().cpu().item()),
+        "rmse": float(th.sqrt(mse).detach().cpu().item()),
+        "mae": float(abs_diff.mean().detach().cpu().item()),
+        "x_mae": float(abs_diff[:, 0].mean().detach().cpu().item()),
+        "y_mae": float(abs_diff[:, 1].mean().detach().cpu().item()),
+    }
+
+
+def decode_offline_pi_coordinates(
+    policy: PathIntegrationRecurrentActorCriticPolicy,
+    pc_logits: th.Tensor,
+    target_xy: th.Tensor,
+    mask: th.Tensor,
+) -> OfflinePICoordinatePredictions:
+    probs = th.softmax(pc_logits, dim=-1)
+    centers = policy.path_integration_target_encoder.centers.to(device=probs.device, dtype=probs.dtype)
+    pred_xy = probs @ centers
+    target_xy = target_xy[..., :2].to(device=pred_xy.device, dtype=pred_xy.dtype)
+    mask = mask.to(device=pred_xy.device).bool()
+    return OfflinePICoordinatePredictions(
+        pred_xy=pred_xy,
+        target_xy=target_xy,
+        mask=mask,
+        metrics=_aggregate_coordinate_metrics(pred_xy, target_xy, mask),
+    )
+
+
 def compute_offline_pi_loss(
     policy: PathIntegrationRecurrentActorCriticPolicy,
     batch: OfflinePIBatch,
@@ -202,16 +279,15 @@ def compute_offline_pi_loss(
     loss = soft_place_cell_cross_entropy(pi_outputs.pc_logits, pc_targets, mask=batch.mask)
 
     with th.no_grad():
-        probs = th.softmax(pi_outputs.pc_logits, dim=-1)
-        centers = policy.path_integration_target_encoder.centers.to(device=probs.device, dtype=probs.dtype)
-        pred_pos = probs @ centers
-        per_step_mse = (pred_pos - batch.target_pos.to(dtype=pred_pos.dtype)).square().mean(dim=-1)
-        valid = batch.mask.bool()
-        localization_mse = per_step_mse[valid].mean().item() if th.any(valid) else 0.0
+        decoded = decode_offline_pi_coordinates(policy, pi_outputs.pc_logits, batch.target_pos, batch.mask)
 
     return loss, {
         "loss": float(loss.detach().cpu().item()),
-        "localization_mse": float(localization_mse),
+        "localization_mse": float(decoded.metrics["mse"]),
+        "localization_rmse": float(decoded.metrics["rmse"]),
+        "localization_mae": float(decoded.metrics["mae"]),
+        "x_mae": float(decoded.metrics["x_mae"]),
+        "y_mae": float(decoded.metrics["y_mae"]),
         "masked_steps": float(batch.mask.sum().detach().cpu().item()),
         "sequence_count": float(batch.sequence_count),
     }
@@ -261,12 +337,23 @@ def _mean_metrics(metric_rows: list[dict[str, float]], prefix: str) -> dict[str,
     if weighted_steps > 0:
         loss = sum(row["loss"] * row["masked_steps"] for row in metric_rows) / weighted_steps
         localization_mse = sum(row["localization_mse"] * row["masked_steps"] for row in metric_rows) / weighted_steps
+        localization_mae = sum(row["localization_mae"] * row["masked_steps"] for row in metric_rows) / weighted_steps
+        x_mae = sum(row["x_mae"] * row["masked_steps"] for row in metric_rows) / weighted_steps
+        y_mae = sum(row["y_mae"] * row["masked_steps"] for row in metric_rows) / weighted_steps
     else:
         loss = float(np.mean([row["loss"] for row in metric_rows]))
         localization_mse = float(np.mean([row["localization_mse"] for row in metric_rows]))
+        localization_mae = float(np.mean([row["localization_mae"] for row in metric_rows]))
+        x_mae = float(np.mean([row["x_mae"] for row in metric_rows]))
+        y_mae = float(np.mean([row["y_mae"] for row in metric_rows]))
+    localization_rmse = float(np.sqrt(localization_mse))
     return {
         f"{prefix}/loss": float(loss),
         f"{prefix}/localization_mse": float(localization_mse),
+        f"{prefix}/localization_rmse": float(localization_rmse),
+        f"{prefix}/localization_mae": float(localization_mae),
+        f"{prefix}/x_mae": float(x_mae),
+        f"{prefix}/y_mae": float(y_mae),
         f"{prefix}/steps": float(weighted_steps),
         f"{prefix}/sequence_count": float(sum(row["sequence_count"] for row in metric_rows)),
     }
@@ -294,6 +381,9 @@ def run_offline_pi_rehearsal(
     shuffle: bool = True,
     seed: int | None = None,
     logger: Any | None = None,
+    on_epoch_start: Callable[[dict[str, Any]], None] | None = None,
+    on_update: Callable[[dict[str, Any]], None] | None = None,
+    on_epoch_end: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, float]:
     policy: PathIntegrationRecurrentActorCriticPolicy = model.policy
     policy.set_training_mode(True)
@@ -303,8 +393,15 @@ def run_offline_pi_rehearsal(
     n_lstm_layers, lstm_hidden_size = _policy_lstm_shape(policy)
 
     metric_rows: list[dict[str, float]] = []
+    latest_epoch_metrics: dict[str, float] | None = None
     updates = 0
     for epoch in range(n_epochs):
+        policy.set_training_mode(True)
+        epoch_number = epoch + 1
+        epoch_start = time.time()
+        if on_epoch_start is not None:
+            on_epoch_start({"epoch": epoch_number, "update": updates})
+        epoch_rows: list[dict[str, float]] = []
         batches = load_offline_pi_batches(
             dataset_root,
             batch_size_sequences=batch_size_sequences,
@@ -321,14 +418,50 @@ def run_offline_pi_rehearsal(
             loss.backward()
             offline_optimizer.step()
             metric_rows.append(metrics)
+            epoch_rows.append(metrics)
             updates += 1
+            if on_update is not None:
+                on_update(
+                    {
+                        "epoch": epoch_number,
+                        "update": updates,
+                        "metrics": metrics,
+                        "lr": float(offline_optimizer.param_groups[0]["lr"]),
+                    }
+                )
             if max_updates is not None and updates >= max_updates:
                 break
+        latest_epoch_metrics = _mean_metrics(epoch_rows, "offline_pi")
+        latest_epoch_metrics["offline_pi/updates"] = float(len(epoch_rows))
+        latest_epoch_metrics["offline_pi/epoch_seconds"] = float(time.time() - epoch_start)
+        latest_epoch_metrics["offline_pi/samples_seen"] = float(
+            sum(row["masked_steps"] for row in epoch_rows)
+        )
+        if epoch_rows:
+            latest_epoch_metrics["offline_pi/loss_std"] = float(np.std([row["loss"] for row in epoch_rows]))
+            latest_epoch_metrics["offline_pi/localization_mse_std"] = float(
+                np.std([row["localization_mse"] for row in epoch_rows])
+            )
+        else:
+            latest_epoch_metrics["offline_pi/loss_std"] = float("nan")
+            latest_epoch_metrics["offline_pi/localization_mse_std"] = float("nan")
+        if on_epoch_end is not None:
+            on_epoch_end(
+                {
+                    "epoch": epoch_number,
+                    "update": updates,
+                    "metrics": latest_epoch_metrics,
+                    "epoch_seconds": latest_epoch_metrics["offline_pi/epoch_seconds"],
+                }
+            )
         if max_updates is not None and updates >= max_updates:
             break
 
     metrics = _mean_metrics(metric_rows, "offline_pi")
     metrics["offline_pi/updates"] = float(updates)
+    if latest_epoch_metrics is not None:
+        metrics["offline_pi/last_epoch_seconds"] = float(latest_epoch_metrics["offline_pi/epoch_seconds"])
+        metrics["offline_pi/final_epoch"] = float(epoch_number)
     _record_metrics(logger, metrics)
     return metrics
 

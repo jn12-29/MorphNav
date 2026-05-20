@@ -54,15 +54,33 @@ By default, the validation command writes `dataset_distribution.json`, `occupanc
 
 Offline rehearsal trains only the PI path of `pi_ppo_lstm` using place-cell cross-entropy. MSE is reported only as a localization metric.
 
+Use the checked-in command note for the default Phase 1 rehearsal/probe datasets:
+
+```bash
+bash scripts/pi.sh
+```
+
 ```bash
 python scripts/offline_pi_rehearsal.py \
   --mode train \
   --dataset-root data/datasets/pointmaze/phase1_pi/rehearsal_seed0 \
   --probe-dataset-root data/datasets/pointmaze/phase1_pi/probe_seed1 \
-  --epochs 1
+  --epochs 1 \
+  --eval-every-epochs 1 \
+  --checkpoint-every-epochs 1
 ```
 
-By default, the command creates a timestamped run under `runs/offline_pi/pointmaze_phase1_seed<seed>_<YYYYMMDD_HHMMSS>/` and writes `models/final_model.zip` and `metrics/offline_pi_metrics.json` there. Pass `--run-name` for a stable name or `--output-dir` for an explicit path.
+By default, the command creates a timestamped run under `runs/offline_pi/pointmaze_phase1_seed<seed>_<YYYYMMDD_HHMMSS>/`. Each run writes `train.log`, `config.json`, `metrics/metrics.jsonl`, `metrics/offline_pi_metrics.json`, probe summaries under `metrics/probe_epoch_XXXX.json`, checkpoints under `models/`, and optional probe diagnostics under `eval/`. Pass `--run-name` for a stable name or `--output-dir` for an explicit path. TensorBoard scalar logging is attempted by default under the run's `tensorboard/` directory; if TensorBoard dependencies are unavailable, training falls back to JSON and text logging. Use `--no-tensorboard` to skip TensorBoard explicitly. Set `--eval-artifact-every-epochs N` to write probe NPZ, JSON, and PNG localization diagnostics every `N` evaluated epochs.
+
+Run an existing checkpoint on a held-out dataset without training updates:
+
+```bash
+python scripts/offline_pi_rehearsal.py \
+  --mode probe \
+  --model-path runs/offline_pi/<run-name>/models/final_model.zip \
+  --dataset-root data/datasets/pointmaze/phase1_pi/probe_seed1 \
+  --output-dir runs/offline_pi/<run-name>_probe
+```
 
 Analyze offline PI bottleneck spatial representations:
 
@@ -72,7 +90,7 @@ python scripts/analyze_offline_pi_representations.py \
   --dataset-root data/datasets/pointmaze/phase1_pi/probe_seed1
 ```
 
-By default, representation analysis writes under `<offline-pi-run>/analysis/representations/<dataset-root-name>/`. Pass `--output-dir` to override that location.
+By default, representation analysis writes under `<offline-pi-run>/analysis/representations/<dataset-root-name>/` and includes `analysis_config.json` with the source model, dataset, and analysis parameters. Pass `--output-dir` to override that location.
 
 ## Train
 

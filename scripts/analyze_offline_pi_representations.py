@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 import sys
 import warnings
@@ -46,6 +47,23 @@ def resolve_output_dir(model_path: Path, dataset_root: Path, output_dir: Path | 
         return output_dir
     run_root = model_path.parent.parent if model_path.parent.name == "models" else model_path.parent
     return run_root / "analysis" / "representations" / dataset_root.name
+
+
+def write_analysis_config(args: argparse.Namespace, output_dir: Path, bounds: tuple[float, float, float, float]) -> None:
+    payload = {
+        "model_path": str(args.model_path),
+        "dataset_root": str(args.dataset_root),
+        "output_dir": str(output_dir),
+        "batch_size_sequences": args.batch_size_sequences,
+        "max_seq_len": args.max_seq_len,
+        "n_bins": args.n_bins,
+        "bounds": [float(value) for value in bounds],
+        "max_steps": args.max_steps,
+        "max_units": args.max_units,
+        "top_k": args.top_k,
+        "device": args.device,
+    }
+    (output_dir / "analysis_config.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _make_env():
@@ -245,6 +263,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     else:
         bounds = tuple(float(v) for v in args.bounds)
+    write_analysis_config(args, output_dir, bounds)
 
     ratemaps = compute_spatial_ratemaps(positions, activations, n_bins=args.n_bins, bounds=bounds)
     autocorrs, grid_scores = analyze_grid_scores(ratemaps)

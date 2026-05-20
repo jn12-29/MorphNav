@@ -2,8 +2,11 @@ from .aux_policy import AuxRecurrentActorCriticPolicy
 from .aux_algo import AuxRecurrentPPO
 from .aux_extractor import CustomCombinedExtractor
 from .offline_pi_rehearsal import (
+    OfflinePICoordinatePredictions,
     OfflinePIBatch,
     compute_offline_pi_loss,
+    count_offline_pi_sequences,
+    decode_offline_pi_coordinates,
     load_offline_pi_batches,
     make_offline_pi_optimizer,
     run_offline_pi_probe,
@@ -16,10 +19,13 @@ __all__ = [
     "AuxRecurrentActorCriticPolicy",
     "AuxRecurrentPPO",
     "CustomCombinedExtractor",
+    "OfflinePICoordinatePredictions",
     "OfflinePIBatch",
     "PathIntegrationRecurrentActorCriticPolicy",
     "PathIntegrationRecurrentPPO",
     "compute_offline_pi_loss",
+    "count_offline_pi_sequences",
+    "decode_offline_pi_coordinates",
     "load_offline_pi_batches",
     "make_offline_pi_optimizer",
     "run_offline_pi_probe",

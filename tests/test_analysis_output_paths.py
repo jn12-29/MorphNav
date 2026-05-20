@@ -1,6 +1,8 @@
 import importlib.util
+import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -31,3 +33,24 @@ def test_offline_pi_representation_analysis_output_dir_override():
     )
 
     assert output_dir == Path("custom/analysis")
+
+
+def test_offline_pi_representation_analysis_writes_run_association_config(tmp_path: Path):
+    args = SimpleNamespace(
+        model_path=Path("runs/offline_pi/run/models/final_model.zip"),
+        dataset_root=Path("data/datasets/pointmaze/phase1_pi/probe_seed1"),
+        batch_size_sequences=16,
+        max_seq_len=1000,
+        n_bins=32,
+        max_steps=None,
+        max_units=256,
+        top_k=8,
+        device="auto",
+    )
+
+    analyze_offline_pi_representations.write_analysis_config(args, tmp_path, (-1.0, 1.0, -2.0, 2.0))
+
+    payload = json.loads((tmp_path / "analysis_config.json").read_text(encoding="utf-8"))
+    assert payload["model_path"] == "runs/offline_pi/run/models/final_model.zip"
+    assert payload["dataset_root"] == "data/datasets/pointmaze/phase1_pi/probe_seed1"
+    assert payload["bounds"] == [-1.0, 1.0, -2.0, 2.0]

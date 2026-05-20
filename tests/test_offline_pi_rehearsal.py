@@ -12,8 +12,11 @@ from components.dataset_gen.pointmaze_config import (
     POINTMAZE_MUJOCO_ZARR_SCHEMA_VERSION,
 )
 from components.dataset_gen.pointmaze_zarr_writer import write_shard
+from components.offline_pi_eval_artifacts import export_probe_artifacts
 from components.offline_pi_rehearsal import (
+    count_offline_pi_sequences,
     compute_offline_pi_loss,
+    decode_offline_pi_coordinates,
     load_offline_pi_batches,
     make_offline_pi_optimizer,
     run_offline_pi_probe,
@@ -135,6 +138,24 @@ def test_offline_loader_and_loss_run_on_padded_recurrent_batch(tmp_path: Path):
     assert loss.ndim == 0
     assert metrics["masked_steps"] == 3.0
     assert metrics["localization_mse"] >= 0.0
+    assert metrics["localization_rmse"] >= 0.0
+    assert metrics["localization_mae"] >= 0.0
+    assert metrics["x_mae"] >= 0.0
+    assert metrics["y_mae"] >= 0.0
+
+    outputs, _ = policy.forward_pi(batch.obs, batch.lstm_states_pi, batch.episode_starts)
+    decoded = decode_offline_pi_coordinates(policy, outputs.pc_logits, batch.target_pos, batch.mask)
+    assert decoded.pred_xy.shape == batch.target_pos.shape
+    assert decoded.target_xy.shape == batch.target_pos.shape
+    assert decoded.mask.tolist() == batch.mask.tolist()
+    assert decoded.metrics["mse"] == pytest.approx(metrics["localization_mse"])
+
+
+def test_count_offline_pi_sequences_respects_max_seq_len(tmp_path: Path):
+    dataset_root = _write_dataset(tmp_path)
+
+    assert count_offline_pi_sequences(dataset_root, max_seq_len=None) == 2
+    assert count_offline_pi_sequences(dataset_root, max_seq_len=2) == 3
 
 
 def test_changing_only_achieved_goal_does_not_change_pi_logits():
@@ -182,8 +203,40 @@ def test_probe_leaves_state_dict_unchanged(tmp_path: Path):
     metrics = run_offline_pi_probe(model, dataset_root, batch_size_sequences=2, max_seq_len=2)
 
     assert metrics["offline_pi/probe/loss"] > 0.0
+    assert metrics["offline_pi/probe/localization_rmse"] >= 0.0
+    assert metrics["offline_pi/probe/localization_mae"] >= 0.0
+    assert metrics["offline_pi/probe/x_mae"] >= 0.0
+    assert metrics["offline_pi/probe/y_mae"] >= 0.0
     for key, value in policy.state_dict().items():
         th.testing.assert_close(value, before[key])
+
+
+def test_export_probe_artifacts_writes_masked_coordinate_diagnostics(tmp_path: Path):
+    dataset_root = _write_dataset(tmp_path / "dataset")
+    output_dir = tmp_path / "eval"
+    policy = _make_policy()
+    model = SimpleNamespace(policy=policy)
+
+    summary = export_probe_artifacts(
+        model,
+        dataset_root,
+        output_dir,
+        epoch=0,
+        batch_size_sequences=2,
+        max_seq_len=2,
+    )
+
+    assert summary["num_steps"] == 5
+    with np.load(output_dir / "pred_vs_target_epoch_0000.npz") as data:
+        assert data["pred_xy"].shape == data["target_xy"].shape
+        assert data["mask"].tolist() == [True, True, True, False, True, True]
+        assert data["squared_error"].shape == data["pred_xy"].shape
+        assert data["absolute_error"].shape == data["pred_xy"].shape
+        assert data["bounds"].shape == (4,)
+    assert (output_dir / "error_summary_epoch_0000.json").is_file()
+    assert (output_dir / "coord_scatter_epoch_0000.png").is_file()
+    assert (output_dir / "error_hist_epoch_0000.png").is_file()
+    assert (output_dir / "spatial_error_heatmap_epoch_0000.png").is_file()
 
 
 def test_rehearsal_rejects_policy_optimizer(tmp_path: Path):
@@ -220,6 +273,7 @@ def test_rehearsal_updates_pi_path_but_not_action_or_value_heads(tmp_path: Path)
     )
 
     assert metrics["offline_pi/updates"] == 1.0
+    assert metrics["offline_pi/final_epoch"] == 1.0
     assert any(
         not th.equal(policy.state_dict()[key], before[key])
         for key in before

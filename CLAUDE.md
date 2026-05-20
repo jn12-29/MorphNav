@@ -14,4 +14,6 @@ This file lists MorphNav-specific traps that Claude Code tends to miss.
 - When changing environment behavior, inspect `envs/__init__.py`, the environment constructor, related zoo configs, and scripts together.
 - Phase 1 dataset and offline-PI contracts live near the implementation in `components/dataset_gen/`, `components/offline_pi_rehearsal.py`, and `components/pi_*.py`; inspect those modules before changing behavior.
 - Keep Phase 1 fresh-model settings in `rl-baselines3-zoo/conf/maze_pi.yml`; standalone offline PI scripts should load from that config instead of duplicating model kwargs.
+- Standalone offline PI runs write a full run directory under `runs/offline_pi/`: keep `train.log`, `config.json`, `metrics/metrics.jsonl`, compatibility metrics, checkpoints, and probe artifacts aligned when changing that workflow.
+- Keep `scripts/pi.sh` aligned with the standalone offline PI CLI and README examples.
 - Keep edits surgical and run the smallest relevant validation.

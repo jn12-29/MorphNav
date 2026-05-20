@@ -4,8 +4,11 @@ import argparse
 from copy import deepcopy
 from datetime import datetime
 import json
+import os
 from pathlib import Path
 import sys
+
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/morphnav_matplotlib")
 
 import gymnasium as gym
 import yaml
@@ -18,7 +21,9 @@ import envs  # noqa: F401  # Registers local Gymnasium envs.
 from components import CustomCombinedExtractor, PathIntegrationRecurrentPPO
 from components.dataset_gen.pointmaze_config import make_phase1_pointmaze_pi_env_config
 from components.dataset_gen.pointmaze_env_factory import build_pointmaze_env_kwargs
-from components.offline_pi_rehearsal import run_offline_pi_probe, run_offline_pi_rehearsal
+from components.offline_pi_workflow import run_offline_pi_workflow
+
+_ZOO_EVAL_GLOBALS = {"CustomCombinedExtractor": CustomCombinedExtractor}
 
 PI_ZOO_CONFIG_PATH = REPO_ROOT / "rl-baselines3-zoo" / "conf" / "maze_pi.yml"
 
@@ -38,6 +43,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--epochs", type=int, default=1)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", type=str, default="auto")
+    parser.add_argument("--log-every-updates", type=int, default=0)
+    parser.add_argument("--eval-every-epochs", type=int, default=1)
+    parser.add_argument("--eval-at-start", dest="eval_at_start", action="store_true", default=True)
+    parser.add_argument("--no-eval-at-start", dest="eval_at_start", action="store_false")
+    parser.add_argument("--eval-artifact-every-epochs", type=int, default=0)
+    parser.add_argument("--checkpoint-every-epochs", type=int, default=0)
+    parser.add_argument("--save-final-checkpoint", dest="save_final_checkpoint", action="store_true", default=True)
+    parser.add_argument("--no-save-final-checkpoint", dest="save_final_checkpoint", action="store_false")
+    parser.add_argument("--tensorboard", dest="tensorboard", action="store_true", default=True)
+    parser.add_argument("--no-tensorboard", dest="tensorboard", action="store_false")
+    parser.add_argument("--tensorboard-log-dir", type=Path, default=None)
     return parser
 
 
@@ -46,6 +62,10 @@ def resolve_output_dir(output_dir: Path | None, run_name: str | None, seed: int)
         return output_dir
     resolved_run_name = run_name or f"pointmaze_phase1_seed{seed}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     return Path("runs/offline_pi") / resolved_run_name
+
+
+def resolved_run_name(output_dir: Path, run_name: str | None) -> str:
+    return run_name or output_dir.name
 
 
 def _make_env():
@@ -61,7 +81,7 @@ def load_pointmaze_pi_hyperparams(config_path: Path = PI_ZOO_CONFIG_PATH) -> dic
 
 def _eval_zoo_value(value):
     if isinstance(value, str):
-        return eval(value)
+        return eval(value, _ZOO_EVAL_GLOBALS)
     return value
 
 
@@ -96,61 +116,43 @@ def _load_or_create_model(args: argparse.Namespace, env) -> PathIntegrationRecur
     return _make_fresh_model(env, learning_rate=args.learning_rate, seed=args.seed, device=args.device)
 
 
-def main(argv: list[str] | None = None) -> int:
-    parser = build_parser()
-    args = parser.parse_args(argv)
+def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     if args.batch_size_sequences <= 0:
         parser.error("--batch-size-sequences must be > 0")
     if args.max_seq_len is not None and args.max_seq_len <= 0:
         parser.error("--max-seq-len must be > 0")
     if args.epochs <= 0:
         parser.error("--epochs must be > 0")
+    if args.max_updates is not None and args.max_updates <= 0:
+        parser.error("--max-updates must be > 0 when provided")
+    if args.log_every_updates < 0:
+        parser.error("--log-every-updates must be >= 0")
+    if args.eval_every_epochs < 0:
+        parser.error("--eval-every-epochs must be >= 0")
+    if args.eval_artifact_every_epochs < 0:
+        parser.error("--eval-artifact-every-epochs must be >= 0")
+    if args.checkpoint_every_epochs < 0:
+        parser.error("--checkpoint-every-epochs must be >= 0")
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+    _validate_args(parser, args)
 
     output_dir = resolve_output_dir(args.output_dir, args.run_name, args.seed)
-    models_dir = output_dir / "models"
-    metrics_dir = output_dir / "metrics"
-    models_dir.mkdir(parents=True, exist_ok=True)
-    metrics_dir.mkdir(parents=True, exist_ok=True)
+    run_name = resolved_run_name(output_dir, args.run_name)
+    fresh_settings = fresh_model_kwargs(learning_rate=args.learning_rate, seed=args.seed, device=args.device)
     env = _make_env()
     try:
         model = _load_or_create_model(args, env)
-        metrics: dict[str, float] = {}
-        if args.mode == "train":
-            metrics.update(
-                run_offline_pi_rehearsal(
-                    model,
-                    args.dataset_root,
-                    lr=args.learning_rate,
-                    batch_size_sequences=args.batch_size_sequences,
-                    max_seq_len=args.max_seq_len,
-                    max_updates=args.max_updates,
-                    n_epochs=args.epochs,
-                    seed=args.seed,
-                )
-            )
-            model.save(models_dir / "final_model")
-            if args.probe_dataset_root is not None:
-                metrics.update(
-                    run_offline_pi_probe(
-                        model,
-                        args.probe_dataset_root,
-                        batch_size_sequences=args.batch_size_sequences,
-                        max_seq_len=args.max_seq_len,
-                    )
-                )
-        else:
-            metrics.update(
-                run_offline_pi_probe(
-                    model,
-                    args.dataset_root,
-                    batch_size_sequences=args.batch_size_sequences,
-                    max_seq_len=args.max_seq_len,
-                )
-            )
-
-        metrics_path = metrics_dir / "offline_pi_metrics.json"
-        metrics_path.write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-        print(f"Wrote offline PI outputs to {output_dir}")
+        metrics = run_offline_pi_workflow(
+            model,
+            args,
+            output_dir=output_dir,
+            run_name=run_name,
+            fresh_model_settings=fresh_settings,
+        )
         print(json.dumps(metrics, indent=2, sort_keys=True))
         return 0
     finally:

@@ -13,4 +13,5 @@ This file lists MorphNav-specific traps that Claude Code tends to miss.
 - New data and output paths should follow the project layout: reusable datasets under `data/datasets/`; experiment outputs, models, TensorBoard logs, rollout recordings, metrics, and analysis artifacts under `runs/`.
 - When changing environment behavior, inspect `envs/__init__.py`, the environment constructor, related zoo configs, and scripts together.
 - Phase 1 dataset and offline-PI contracts live near the implementation in `components/dataset_gen/`, `components/offline_pi_rehearsal.py`, and `components/pi_*.py`; inspect those modules before changing behavior.
+- Keep Phase 1 fresh-model settings in `rl-baselines3-zoo/conf/maze_pi.yml`; standalone offline PI scripts should load from that config instead of duplicating model kwargs.
 - Keep edits surgical and run the smallest relevant validation.

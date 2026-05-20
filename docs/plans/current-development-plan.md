@@ -22,6 +22,7 @@ Core commitments:
 - `achieved_goal` remains in observations as the PI target and is dropped only from policy features.
 - `path_integration_head` must be included in the online PPO optimizer parameter set.
 - Existing online rollout PI behavior in `PathIntegrationRecurrentPPO.train()` is preserved apart from the optimizer membership fix.
+- RL interleaving should be exposed through a lightweight SB3 callback or runner hook after the standalone APIs are in place.
 - Phase 1 remains limited to the PointMaze MuJoCo ball model.
 
 ## Phase 2: Separate PI/RL Recurrent Architecture

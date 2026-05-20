@@ -46,7 +46,7 @@ These names are separate from RL `train` and online RL `eval` terminology.
 
 Keep the Phase 1 PointMaze PI defaults in one implementation-level preset or helper, not duplicated across README, shell scripts, zoo YAML, and planning docs.
 
-The preset should cover the shared env kwargs needed for observation-space parity between dataset generation and the target `pi_ppo_lstm` RL run. `rl-baselines3-zoo/conf/maze_pi.yml` remains responsible for model and feature-extractor settings, including `features_extractor_kwargs=dict(drop_keys=['achieved_goal'])`.
+The preset should cover the shared env kwargs needed for observation-space parity between dataset generation and the target `pi_ppo_lstm` RL run. `rl-baselines3-zoo/conf/maze_pi.yml` remains responsible for model and feature-extractor settings, including `features_extractor_kwargs=dict(drop_keys=['achieved_goal'])`. Standalone offline PI entry points should load fresh-model settings from this zoo config instead of duplicating them.
 
 Docs should name the preset and describe the contract. Shell scripts remain experiment notes, not the source of truth for default environment settings.
 
@@ -54,15 +54,17 @@ Docs should name the preset and describe the contract. Shell scripts remain expe
 
 ### Dataset Roots
 
-Use two independent dataset roots:
+Use two independent dataset roots under `data/datasets/pointmaze/phase1_pi/`:
 
-- `pointmaze_mujoco_pi_rehearsal`
-- `pointmaze_mujoco_pi_probe`
+- `rehearsal_seed<S>`
+- `probe_seed<S+1>`
 
 Use different seeds by convention:
 
 - `pi_rehearsal_dataset`: `dataset_seed = S`
 - `pi_probe_dataset`: `dataset_seed = S + 1`
+
+The Phase 1 generator default is `phase1_pi/rehearsal_seed<dataset_seed>` when `--dataset-name` is omitted. Pass `--dataset-name phase1_pi/probe_seed<S+1>` for the held-out probe dataset.
 
 For grid-cells-torch-scale Phase 1 runs, use 10k rehearsal episodes and 4k probe episodes with `episodes_per_shard=1000` and compact NPZ storage.
 
@@ -275,9 +277,9 @@ The offline optimizer must not share object identity or optimizer state with `po
 
 ## RL Integration Surface
 
-First add standalone APIs and an optional standalone script. Avoid depending on `rl-baselines3-zoo` experiment-manager internals.
+First add standalone APIs and a standalone script. Avoid depending on `rl-baselines3-zoo` experiment-manager internals, but keep fresh-model hyperparameters sourced from `rl-baselines3-zoo/conf/maze_pi.yml`.
 
-Later integration can be a lightweight SB3 callback or runner hook with explicit settings:
+Add RL interleaving through a lightweight SB3 callback or runner hook with explicit settings:
 
 - `offline_pi_rehearsal_interval`
 - `offline_pi_rehearsal_steps`
@@ -287,7 +289,7 @@ Later integration can be a lightweight SB3 callback or runner hook with explicit
 Metrics should use a separate namespace, for example:
 
 - `offline_pi/loss`
-- `offline_pi/probe_loss`
+- `offline_pi/probe/loss`
 - `offline_pi/steps`
 - `offline_pi/sequence_count`
 
@@ -301,7 +303,7 @@ Metrics should use a separate namespace, for example:
 6. Add `forward_pi(...)` and `compute_offline_pi_loss(...)`.
 7. Add `make_offline_pi_optimizer(...)`, `run_offline_pi_rehearsal(...)`, and `run_offline_pi_probe(...)`.
 8. Add standalone rehearsal / probe entry points.
-9. Add optional RL interleaving callback or runner hook.
+9. Add RL interleaving callback or runner hook.
 10. Update `README.md` with the minimal user entry point once the commands and schema are implemented.
 
 ## Test Plan

@@ -32,3 +32,22 @@ def test_offline_pi_explicit_output_dir_override():
     output_dir = offline_pi_rehearsal_script.resolve_output_dir(Path("custom/run"), "manual_run", seed=7)
 
     assert output_dir == Path("custom/run")
+
+
+def test_fresh_model_kwargs_loads_policy_settings_from_zoo_config():
+    model_config = offline_pi_rehearsal_script.fresh_model_kwargs(
+        learning_rate=3e-4,
+        seed=11,
+        device="cpu",
+    )
+
+    assert model_config["policy"] == "PathIntegrationMultiInputLstmPolicy"
+    kwargs = model_config["kwargs"]
+    assert kwargs["learning_rate"] == 3e-4
+    assert kwargs["seed"] == 11
+    assert kwargs["device"] == "cpu"
+    assert kwargs["pi_target_key"] == "achieved_goal"
+    assert kwargs["policy_kwargs"]["features_extractor_kwargs"] == {"drop_keys": ["achieved_goal"]}
+    assert kwargs["policy_kwargs"]["lstm_hidden_size"] == 256
+    assert "n_envs" not in kwargs
+    assert "n_timesteps" not in kwargs

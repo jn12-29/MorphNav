@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 from datetime import datetime
 import json
 from pathlib import Path
 import sys
 
 import gymnasium as gym
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(REPO_ROOT) not in sys.path:
@@ -17,6 +19,8 @@ from components import CustomCombinedExtractor, PathIntegrationRecurrentPPO
 from components.dataset_gen.pointmaze_config import make_phase1_pointmaze_pi_env_config
 from components.dataset_gen.pointmaze_env_factory import build_pointmaze_env_kwargs
 from components.offline_pi_rehearsal import run_offline_pi_probe, run_offline_pi_rehearsal
+
+PI_ZOO_CONFIG_PATH = REPO_ROOT / "rl-baselines3-zoo" / "conf" / "maze_pi.yml"
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -49,30 +53,38 @@ def _make_env():
     return gym.make("PointMaze", **build_pointmaze_env_kwargs(env_config))
 
 
+def load_pointmaze_pi_hyperparams(config_path: Path = PI_ZOO_CONFIG_PATH) -> dict:
+    with Path(config_path).open(encoding="utf-8") as f:
+        config = yaml.safe_load(f)
+    return deepcopy(config["PointMaze"])
+
+
+def _eval_zoo_value(value):
+    if isinstance(value, str):
+        return eval(value)
+    return value
+
+
+def fresh_model_kwargs(*, learning_rate: float, seed: int, device: str, config_path: Path = PI_ZOO_CONFIG_PATH) -> dict:
+    hyperparams = load_pointmaze_pi_hyperparams(config_path)
+    policy = hyperparams.pop("policy")
+    hyperparams.pop("n_envs", None)
+    hyperparams.pop("n_timesteps", None)
+    hyperparams["learning_rate"] = learning_rate
+    hyperparams["seed"] = seed
+    hyperparams["device"] = device
+    hyperparams["verbose"] = 0
+    if "policy_kwargs" in hyperparams:
+        hyperparams["policy_kwargs"] = _eval_zoo_value(hyperparams["policy_kwargs"])
+    return {"policy": policy, "kwargs": hyperparams}
+
+
 def _make_fresh_model(env, *, learning_rate: float, seed: int, device: str) -> PathIntegrationRecurrentPPO:
-    policy_kwargs = dict(
-        features_extractor_class=CustomCombinedExtractor,
-        features_extractor_kwargs=dict(drop_keys=["achieved_goal"]),
-        n_lstm_layers=1,
-        lstm_hidden_size=256,
-        pi_bottleneck_dim=256,
-        pi_dropout_rate=0.5,
-    )
+    model_config = fresh_model_kwargs(learning_rate=learning_rate, seed=seed, device=device)
     return PathIntegrationRecurrentPPO(
-        "PathIntegrationMultiInputLstmPolicy",
+        model_config["policy"],
         env,
-        learning_rate=learning_rate,
-        policy_kwargs=policy_kwargs,
-        pi_loss_coef=1.0,
-        pi_target_key="achieved_goal",
-        pi_n_place_cells=256,
-        pi_place_cell_scale=0.01,
-        pi_pos_min=-2.5,
-        pi_pos_max=2.5,
-        pi_neurons_seed=8341,
-        seed=seed,
-        device=device,
-        verbose=0,
+        **model_config["kwargs"],
     )
 
 

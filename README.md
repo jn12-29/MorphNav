@@ -87,6 +87,7 @@ python ./rl-baselines3-zoo/train.py --algo ppo_lstm --env PointMaze -conf ./rl-b
 `pi_ppo_lstm` adds a parallel place-cell prediction branch to PPO-LSTM. The action distribution path does not consume the PI bottleneck, but the auxiliary loss branches from actor LSTM states and trains the shared recurrent features.
 
 `achieved_goal` must remain in rollout observations as the PI target. Phase 1 PointMaze PI runs should use `sensor_aware=True` to match the dataset preset. `rl-baselines3-zoo/conf/maze_pi.yml` drops `achieved_goal` from policy features with `features_extractor_kwargs=dict(drop_keys=['achieved_goal'])`.
+Standalone offline PI runs create fresh models from the same `rl-baselines3-zoo/conf/maze_pi.yml` model settings.
 
 ```bash
 python ./rl-baselines3-zoo/train.py --algo pi_ppo_lstm --env PointMaze -conf ./rl-baselines3-zoo/conf/maze_pi.yml --log-folder runs/sb3 --tensorboard-log runs/tensorboard/sb3

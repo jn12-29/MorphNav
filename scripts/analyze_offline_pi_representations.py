@@ -29,7 +29,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Analyze offline PI bottleneck spatial representations.")
     parser.add_argument("--model-path", type=Path, required=True)
     parser.add_argument("--dataset-root", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--batch-size-sequences", type=int, default=16)
     parser.add_argument("--max-seq-len", type=int, default=1000)
     parser.add_argument("--n-bins", type=int, default=32)
@@ -39,6 +39,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--top-k", type=int, default=8)
     parser.add_argument("--device", type=str, default="auto")
     return parser
+
+
+def resolve_output_dir(model_path: Path, dataset_root: Path, output_dir: Path | None) -> Path:
+    if output_dir is not None:
+        return output_dir
+    run_root = model_path.parent.parent if model_path.parent.name == "models" else model_path.parent
+    return run_root / "analysis" / "representations" / dataset_root.name
 
 
 def _make_env():
@@ -225,7 +232,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.max_seq_len <= 0:
         parser.error("--max-seq-len must be > 0")
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = resolve_output_dir(args.model_path, args.dataset_root, args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
     positions, activations = collect_bottleneck_activity(args)
     if args.bounds is None:
         margin = 0.1
@@ -241,7 +249,7 @@ def main(argv: list[str] | None = None) -> int:
     ratemaps = compute_spatial_ratemaps(positions, activations, n_bins=args.n_bins, bounds=bounds)
     autocorrs, grid_scores = analyze_grid_scores(ratemaps)
     np.savez(
-        args.output_dir / "analysis_data.npz",
+        output_dir / "analysis_data.npz",
         positions=positions,
         activations=activations,
         ratemaps=ratemaps,
@@ -249,8 +257,8 @@ def main(argv: list[str] | None = None) -> int:
         grid_scores=grid_scores,
         bounds=np.asarray(bounds, dtype=np.float32),
     )
-    plot_top_grid_cells(ratemaps, autocorrs, grid_scores, args.output_dir, args.top_k)
-    plot_ratemap_grid(ratemaps, args.output_dir)
+    plot_top_grid_cells(ratemaps, autocorrs, grid_scores, output_dir, args.top_k)
+    plot_ratemap_grid(ratemaps, output_dir)
 
     valid = np.where(~np.isnan(grid_scores))[0]
     if valid.size:

@@ -1,4 +1,5 @@
 import importlib.util
+import os
 from pathlib import Path
 import sys
 
@@ -100,6 +101,20 @@ def test_analyze_pointmaze_dataset_summarizes_and_plots(tmp_path: Path):
             "8",
         ]
     ) == 0
+    default_output_dir = tmp_path / "runs" / "offline_pi" / "pointmaze_phase1_seed0" / "analysis" / "datasets" / dataset_root.name
+    cwd = Path.cwd()
+    try:
+        os.chdir(tmp_path)
+        assert analyze_pointmaze_dataset.main(
+            [
+                "--dataset-root",
+                str(dataset_root),
+                "--n-bins",
+                "8",
+            ]
+        ) == 0
+    finally:
+        os.chdir(cwd)
 
     assert summary["policy_type"] == "GridCellRandomWalkForceDriver"
     assert summary["num_episodes"] == 2
@@ -110,3 +125,4 @@ def test_analyze_pointmaze_dataset_summarizes_and_plots(tmp_path: Path):
     assert (tmp_path / "analysis" / "trajectory_preview.png").exists()
     assert (tmp_path / "analysis_cli" / "dataset_distribution.json").exists()
     assert (tmp_path / "analysis_cli" / "occupancy.png").exists()
+    assert (default_output_dir / "dataset_distribution.json").exists()

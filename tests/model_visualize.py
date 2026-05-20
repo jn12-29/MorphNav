@@ -6,6 +6,6 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import components
 
 model = RecurrentPPO.load(
-    "/home/xh/ai4neuron/MorphNav/logs/aux_ppo_lstm/PointMaze_6/best_model.zip"
+    "runs/sb3/aux_ppo_lstm/PointMaze_6/best_model.zip"
 )
 print(model.policy)

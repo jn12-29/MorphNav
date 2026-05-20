@@ -123,6 +123,8 @@ def test_generate_pointmaze_dataset_cli_help_surface():
         "--episodes-per-shard",
         "--storage-format",
         "--dataset-seed",
+        "--timestamp-name",
+        "--overwrite",
         "--maze-map-name",
         "--xml-file-path",
         "--max-episode-steps",
@@ -137,7 +139,41 @@ def test_generate_pointmaze_dataset_cli_help_surface():
         assert flag in help_text
 
 
-def test_generate_dataset_removes_stale_shards_before_writing(monkeypatch, tmp_path: Path):
+def test_phase1_dataset_name_defaults_to_seeded_rehearsal_name():
+    dataset_name = generate_pointmaze_dataset.resolve_dataset_name("phase1_pointmaze_pi", None, 7)
+
+    assert dataset_name == "phase1_pi/rehearsal_seed7"
+
+
+def test_default_dataset_name_can_include_timestamp():
+    with pytest.MonkeyPatch.context() as monkeypatch:
+        datetime_mock = types.SimpleNamespace(
+            now=lambda: types.SimpleNamespace(strftime=lambda fmt: "20260520_153045")
+        )
+        monkeypatch.setattr(generate_pointmaze_dataset, "datetime", datetime_mock)
+        dataset_name = generate_pointmaze_dataset.resolve_dataset_name("phase1_pointmaze_pi", None, 7, True)
+
+    assert dataset_name == "phase1_pi/rehearsal_seed7_20260520_153045"
+
+
+def test_generate_dataset_refuses_to_overwrite_existing_shards(tmp_path: Path):
+    dataset_dir = tmp_path / "dataset"
+    dataset_dir.mkdir()
+    (dataset_dir / "shard_000000.npz").write_text("stale", encoding="utf-8")
+
+    config = SimpleNamespace(
+        output=SimpleNamespace(output_dir=str(tmp_path), dataset_name="dataset", episodes_per_shard=2, storage_format="npz"),
+        env=SimpleNamespace(env_id="PointMaze", maze_map_name="OPEN", max_episode_steps=1000),
+        policy=SimpleNamespace(),
+        dataset_seed=0,
+        num_episodes=1,
+    )
+
+    with pytest.raises(FileExistsError, match="--overwrite"):
+        generate_pointmaze_dataset.generate_dataset(config)
+
+
+def test_generate_dataset_removes_stale_shards_with_overwrite(monkeypatch, tmp_path: Path):
     stale_shard_dir = tmp_path / "dataset" / "shard_000123.zarr"
     stale_shard_dir.mkdir(parents=True)
     stale_shard_file = tmp_path / "dataset" / "shard_000456.zarr"
@@ -227,7 +263,7 @@ def test_generate_dataset_removes_stale_shards_before_writing(monkeypatch, tmp_p
         num_episodes=1,
     )
 
-    generate_pointmaze_dataset.generate_dataset(config)
+    generate_pointmaze_dataset.generate_dataset(config, overwrite=True)
 
     assert not stale_shard_dir.exists()
     assert not stale_shard_file.exists()

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import json
 from pathlib import Path
 import sys
@@ -23,7 +24,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mode", choices=("train", "probe"), default="train")
     parser.add_argument("--dataset-root", type=Path, required=True)
     parser.add_argument("--probe-dataset-root", type=Path, default=None)
-    parser.add_argument("--output-dir", type=Path, default=Path("logs/offline_pi/pointmaze_phase1"))
+    parser.add_argument("--output-dir", type=Path, default=None)
+    parser.add_argument("--run-name", type=str, default=None)
     parser.add_argument("--model-path", type=Path, default=None)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--batch-size-sequences", type=int, default=16)
@@ -33,6 +35,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--device", type=str, default="auto")
     return parser
+
+
+def resolve_output_dir(output_dir: Path | None, run_name: str | None, seed: int) -> Path:
+    if output_dir is not None:
+        return output_dir
+    resolved_run_name = run_name or f"pointmaze_phase1_seed{seed}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    return Path("runs/offline_pi") / resolved_run_name
 
 
 def _make_env():
@@ -85,7 +94,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.epochs <= 0:
         parser.error("--epochs must be > 0")
 
-    args.output_dir.mkdir(parents=True, exist_ok=True)
+    output_dir = resolve_output_dir(args.output_dir, args.run_name, args.seed)
+    models_dir = output_dir / "models"
+    metrics_dir = output_dir / "metrics"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    metrics_dir.mkdir(parents=True, exist_ok=True)
     env = _make_env()
     try:
         model = _load_or_create_model(args, env)
@@ -103,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
                     seed=args.seed,
                 )
             )
-            model.save(args.output_dir / "final_model")
+            model.save(models_dir / "final_model")
             if args.probe_dataset_root is not None:
                 metrics.update(
                     run_offline_pi_probe(
@@ -123,8 +136,9 @@ def main(argv: list[str] | None = None) -> int:
                 )
             )
 
-        metrics_path = args.output_dir / "offline_pi_metrics.json"
+        metrics_path = metrics_dir / "offline_pi_metrics.json"
         metrics_path.write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        print(f"Wrote offline PI outputs to {output_dir}")
         print(json.dumps(metrics, indent=2, sort_keys=True))
         return 0
     finally:

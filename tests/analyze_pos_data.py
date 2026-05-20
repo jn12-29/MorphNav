@@ -305,7 +305,7 @@ if __name__ == "__main__":
         "--data-dir",
         type=str,
         required=True,
-        help="Path to the positions.npz file directory",
+        help="Path to the rollout data directory containing positions.npz",
     )
     parser.add_argument(
         "--env-idx", type=int, default=0, help="Environment index to plot (default: 0)"
@@ -329,12 +329,15 @@ if __name__ == "__main__":
     if not os.path.exists(npz_file):
         print(f"错误: 找不到文件 {npz_file}")
     else:
-        static_save_path = os.path.join(args.data_dir, "plot.png")
+        output_dir = os.path.join(os.path.dirname(os.path.abspath(args.data_dir)), "analysis")
+        os.makedirs(output_dir, exist_ok=True)
+
+        static_save_path = os.path.join(output_dir, "positions_plot.png")
         visualize_positions(
             npz_file, args.env_idx, static_save_path, args.max_frames, args.reset_thresh
         )
 
-        anim_save_path = os.path.join(args.data_dir, "animation.mp4")
+        anim_save_path = os.path.join(output_dir, "positions_animation.mp4")
         animate_positions_parallel(
             npz_file, args.env_idx, anim_save_path, args.max_frames, args.reset_thresh
         )

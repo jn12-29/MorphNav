@@ -1,7 +1,7 @@
 """
-Spatial Analysis Script for Recorded Data
-==========================================
-使用 DataRecorder 加载 recorded_data 中的数据，生成空间活动图。
+Spatial Analysis Script for Rollout Data
+========================================
+使用 DataRecorder 加载 rollout data 中的数据，生成空间活动图。
 
 参考: generate_spatiai_ratemaps.py 中的 spatial ratemap 生成方法
 """
@@ -179,9 +179,15 @@ def generate_spatial_ratemaps_smooth(
     return np.array(ratemaps)
 
 
-def analyze_recorded_data(
-    data_dir: str = "./recorded_data",
-    output_dir: str = "./analysis_results",
+def resolve_output_dir(data_dir: str, output_dir: str | None = None) -> str:
+    if output_dir:
+        return output_dir
+    return str(Path(data_dir).resolve().parent / "analysis")
+
+
+def analyze_rollout_data(
+    data_dir: str,
+    output_dir: str | None = None,
     n_bins: int = 32,
     environment_bounds: tuple = None,
     max_episodes: int = None,
@@ -190,7 +196,7 @@ def analyze_recorded_data(
     dpi: int = 100,
 ):
     """
-    分析 recorded_data 中的所有 episode，生成空间活动图。
+    分析 rollout data 中的所有 episode，生成空间活动图。
 
     参数:
         data_dir: 数据目录
@@ -202,6 +208,7 @@ def analyze_recorded_data(
         max_display: 最大显示数量 (用于 grid 和 sample 模式)
         dpi: 图像分辨率
     """
+    output_dir = resolve_output_dir(data_dir, output_dir)
     Path(output_dir).mkdir(parents=True, exist_ok=True)
 
     print(f"加载数据 from {data_dir}...")
@@ -968,9 +975,9 @@ def plot_best_hd_cells(tuning_curves, mvls, bin_centers, output_dir, top_k=5):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="分析 recorded_data 生成空间活动图")
+    parser = argparse.ArgumentParser(description="分析 rollout data 生成空间活动图")
     parser.add_argument(
-        "--data-dir", type=str, default="./recorded_data", help="数据目录"
+        "--data-dir", type=str, required=True, help="数据目录"
     )
     parser.add_argument("--output-dir", type=str, default="", help="输出目录")
     parser.add_argument("--n-bins", type=int, default=32, help="网格大小")
@@ -1007,10 +1014,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    args.output_dir = os.path.join(args.data_dir, "analysis_results")
-    os.makedirs(args.output_dir, exist_ok=True)
-
-    analyze_recorded_data(
+    analyze_rollout_data(
         data_dir=args.data_dir,
         output_dir=args.output_dir,
         n_bins=args.n_bins,

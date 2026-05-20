@@ -57,7 +57,7 @@ class PointMazePolicyConfig:
 
 @dataclass
 class PointMazeOutputConfig:
-    output_dir: str = "recorded_data/pointmaze"
+    output_dir: str = "data/datasets/pointmaze"
     dataset_name: str = "pointmaze_mujoco"
     episodes_per_shard: int = 1000
     num_workers: int = 1

@@ -1,6 +1,6 @@
 import torch
 
-acts = torch.load("./logs/ppo_lstm/PointMaze_4/videos/activations.pt")
+acts = torch.load("runs/sb3/ppo_lstm/PointMaze_4/rollouts/best/data/activations.pt")
 
 print(acts)
 

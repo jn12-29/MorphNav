@@ -26,7 +26,7 @@ from components.dataset_gen.pointmaze_config import (  # noqa: E402
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Analyze PointMaze dataset coverage and action distribution.")
     parser.add_argument("--dataset-root", type=Path, required=True)
-    parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--n-bins", type=int, default=32)
     parser.add_argument("--bounds", type=float, nargs=4, default=None, metavar=("MIN_X", "MAX_X", "MIN_Y", "MAX_Y"))
     parser.add_argument("--max-preview-episodes", type=int, default=12)
@@ -267,6 +267,12 @@ def resolve_bounds(data: dict[str, Any], raw_bounds: list[float] | tuple[float, 
     return (-2.5, 2.5, -2.5, 2.5)
 
 
+def resolve_output_dir(dataset_root: Path, output_dir: Path | None) -> Path:
+    if output_dir is not None:
+        return output_dir
+    return Path("runs/offline_pi/pointmaze_phase1_seed0/analysis/datasets") / dataset_root.name
+
+
 def plot_distribution(data: dict[str, Any], output_dir: Path, *, n_bins: int, bounds: tuple[float, float, float, float]) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     positions = np.asarray(data["positions"])
@@ -336,12 +342,13 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--bounds must satisfy MIN_X < MAX_X and MIN_Y < MAX_Y")
 
     summary = summarize_distribution(data, n_bins=args.n_bins, bounds=bounds)
-    args.output_dir.mkdir(parents=True, exist_ok=True)
-    (args.output_dir / "dataset_distribution.json").write_text(
+    output_dir = resolve_output_dir(args.dataset_root, args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "dataset_distribution.json").write_text(
         json.dumps(_json_safe(summary), indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    plot_distribution(data, args.output_dir, n_bins=args.n_bins, bounds=bounds)
+    plot_distribution(data, output_dir, n_bins=args.n_bins, bounds=bounds)
     print(json.dumps(_json_safe(summary), indent=2, sort_keys=True))
     return 0
 

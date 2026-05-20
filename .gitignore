@@ -3,6 +3,8 @@
 /logs
 /analysis_results
 /recorded_data
+/data
+/runs
 .codex/
 .claude/
 .vendor/

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 from pathlib import Path
 import shutil
 import sys
@@ -18,12 +19,14 @@ if TYPE_CHECKING:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Generate PointMaze MuJoCo dataset shards.")
     parser.add_argument("--preset", type=str, default="", choices=("", "phase1_pointmaze_pi"))
-    parser.add_argument("--output-dir", type=Path, default=Path("recorded_data/pointmaze"))
+    parser.add_argument("--output-dir", type=Path, default=Path("data/datasets/pointmaze"))
     parser.add_argument("--dataset-name", type=str, default=None)
     parser.add_argument("--num-episodes", type=int, default=1000)
     parser.add_argument("--episodes-per-shard", type=int, default=1000)
     parser.add_argument("--storage-format", type=str, default="npz", choices=("npz", "zarr"))
     parser.add_argument("--dataset-seed", type=int, default=0)
+    parser.add_argument("--timestamp-name", action="store_true")
+    parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--maze-map-name", type=str, default="OPEN")
     parser.add_argument("--xml-file-path", type=str, default=None)
     parser.add_argument("--max-episode-steps", type=int, default=1000)
@@ -37,6 +40,22 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def resolve_dataset_name(preset: str, dataset_name: str | None, dataset_seed: int, timestamp_name: bool = False) -> str:
+    from components.dataset_gen.pointmaze_config import PHASE1_POINTMAZE_PI_PRESET
+
+    if dataset_name is not None:
+        return dataset_name
+    if preset == PHASE1_POINTMAZE_PI_PRESET:
+        name = f"phase1_pi/rehearsal_seed{dataset_seed}"
+        if timestamp_name:
+            name = f"{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        return name
+    name = "pointmaze_mujoco"
+    if timestamp_name:
+        name = f"{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    return name
+
+
 def _build_config(args: argparse.Namespace) -> "PointMazeDatasetConfig":
     from components.dataset_gen.pointmaze_config import (
         PHASE1_POINTMAZE_PI_PRESET,
@@ -48,10 +67,9 @@ def _build_config(args: argparse.Namespace) -> "PointMazeDatasetConfig":
 
     if args.preset == PHASE1_POINTMAZE_PI_PRESET:
         env_config = make_phase1_pointmaze_pi_env_config(max_episode_steps=args.max_episode_steps)
-        dataset_name = args.dataset_name or "pointmaze_mujoco_pi_rehearsal"
     else:
         env_config = PointMazeEnvConfig(max_episode_steps=args.max_episode_steps)
-        dataset_name = args.dataset_name or "pointmaze_mujoco"
+    dataset_name = resolve_dataset_name(args.preset, args.dataset_name, args.dataset_seed, args.timestamp_name)
 
     env_config.maze_map_name = args.maze_map_name
     if args.xml_file_path is not None:
@@ -102,7 +120,7 @@ def _cleanup_existing_shards(dataset_dir: Path) -> None:
                 shard_path.unlink(missing_ok=True)
 
 
-def generate_dataset(config: "PointMazeDatasetConfig") -> Path:
+def generate_dataset(config: "PointMazeDatasetConfig", *, overwrite: bool = False) -> Path:
     from dataclasses import asdict
 
     from components.dataset_gen.pointmaze_config import (
@@ -119,7 +137,11 @@ def generate_dataset(config: "PointMazeDatasetConfig") -> Path:
 
     dataset_dir = Path(config.output.output_dir) / config.output.dataset_name
     dataset_dir.mkdir(parents=True, exist_ok=True)
-    _cleanup_existing_shards(dataset_dir)
+    existing_shards = list(dataset_dir.glob("shard_*.npz")) + list(dataset_dir.glob("shard_*.zarr"))
+    if existing_shards and not overwrite:
+        raise FileExistsError(f"{dataset_dir} already contains shards; pass --overwrite to replace them")
+    if overwrite:
+        _cleanup_existing_shards(dataset_dir)
 
     episode_plan = build_episode_plan(
         dataset_seed=config.dataset_seed,
@@ -206,7 +228,10 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("--max-episode-steps must be > 0")
 
     config = _build_config(args)
-    dataset_dir = generate_dataset(config)
+    try:
+        dataset_dir = generate_dataset(config, overwrite=args.overwrite)
+    except FileExistsError as exc:
+        parser.error(str(exc))
     print(f"Wrote dataset to {dataset_dir}")
     return 0
 

@@ -6,7 +6,7 @@ Follow `scripts/build_conda_env.sh`.
 
 ## PointMaze Offline PI Dataset Generation
 
-The standalone generator writes the current PointMaze dataset schema implemented by `components/dataset_gen/`. Use the Phase 1 preset for offline path-integration rehearsal/probe data. The preset samples trajectories with a grid-cells-style smooth velocity random walk, then uses a PointMaze global `x/y` force controller to track that desired velocity through MuJoCo dynamics. The default storage is compact NPZ shards to avoid directory-style Zarr small-file overhead.
+The standalone generator writes the current PointMaze dataset schema implemented by `components/dataset_gen/`. Use the Phase 1 preset for offline path-integration rehearsal/probe data. The preset samples trajectories with a grid-cells-style smooth velocity random walk, then uses a PointMaze global `x/y` force controller to track that desired velocity through MuJoCo dynamics. It keeps `sensor_aware=True`, so `obs/observation` includes MuJoCo velocity plus four touch-sensor channels. The collection driver reacts to those touch channels instead of using hard-coded arena boundaries or a synthetic collision flag: contact response uses a tangent-biased direction with a weaker away-from-wall component plus bounded jitter, without random heading resampling in the touch branch. The default storage is compact NPZ shards to avoid directory-style Zarr small-file overhead.
 
 ```bash
 python scripts/generate_pointmaze_dataset.py \
@@ -30,7 +30,7 @@ Shard arrays include `episode_lengths`, `episode_offsets`, `step/action`, `step/
 
 Each shard includes `dataset_meta_json` and `episode_summaries_json` entries. Use `--storage-format zarr` only when directory-style Zarr output is explicitly needed.
 
-`obs/*` rows are action-before policy observations aligned one-to-one with `step/action`. Raw `info` payloads are not persisted.
+`obs/*` rows are action-before policy observations aligned one-to-one with `step/action`. Raw `info` payloads are not persisted. Keep the target `pi_ppo_lstm` RL run sensor-aware as well, or the dataset and policy observation spaces will not match.
 
 Validate dataset coverage before training:
 
@@ -76,7 +76,7 @@ python ./rl-baselines3-zoo/train.py --algo ppo_lstm --env PointMaze -conf ./rl-b
 
 `pi_ppo_lstm` adds a parallel place-cell prediction branch to PPO-LSTM. The action distribution path does not consume the PI bottleneck, but the auxiliary loss branches from actor LSTM states and trains the shared recurrent features.
 
-`achieved_goal` must remain in rollout observations as the PI target. `rl-baselines3-zoo/conf/maze_pi.yml` drops it from policy features with `features_extractor_kwargs=dict(drop_keys=['achieved_goal'])`.
+`achieved_goal` must remain in rollout observations as the PI target. Phase 1 PointMaze PI runs should use `sensor_aware=True` to match the dataset preset. `rl-baselines3-zoo/conf/maze_pi.yml` drops `achieved_goal` from policy features with `features_extractor_kwargs=dict(drop_keys=['achieved_goal'])`.
 
 ```bash
 python ./rl-baselines3-zoo/train.py --algo pi_ppo_lstm --env PointMaze -conf ./rl-baselines3-zoo/conf/maze_pi.yml

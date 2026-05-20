@@ -66,7 +66,7 @@ def collect_episode(
         last_qvel = np.asarray(info["qvel"], dtype=np.float32)[:2]
     else:
         last_qvel = np.asarray(obs["observation"], dtype=np.float32)[:2]
-    collision = bool(info.get("collision", False))
+    last_touch = np.asarray(info.get("sensordata", []), dtype=np.float32)
     done = False
 
     while not done:
@@ -75,7 +75,7 @@ def collect_episode(
             obs_buffer[key].append(np.asarray(obs[key], dtype=np.float32))
 
         action = np.asarray(
-            policy.act(agent_xy=last_xy, agent_qvel=last_qvel, collision=collision),
+            policy.act(agent_xy=last_xy, agent_qvel=last_qvel, touch=last_touch),
             dtype=np.float32,
         )
         goal = np.asarray(obs["desired_goal"], dtype=np.float32)
@@ -104,9 +104,9 @@ def collect_episode(
         infos.append(dict(step_info))
 
         new_xy = step_qpos[:2]
-        collision = bool(step_info.get("collision", False))
         last_xy = new_xy
         last_qvel = step_qvel[:2]
+        last_touch = np.asarray(step_info.get("sensordata", []), dtype=np.float32)
         if max_steps is not None and len(actions) >= max_steps and not (term or trunc):
             truncated[-1] = True
             trunc = True

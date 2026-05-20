@@ -39,10 +39,10 @@
   </actuator>
 
   <sensor>
-    <touch name="t_front" site="s_front" cutoff="0.001"/>
-    <touch name="t_back"  site="s_back"  cutoff="0.001"/>
-    <touch name="t_left"  site="s_left"  cutoff="0.001"/>
-    <touch name="t_right" site="s_right" cutoff="0.001"/>
+    <touch name="t_front" site="s_front" cutoff="1.0"/>
+    <touch name="t_back"  site="s_back"  cutoff="1.0"/>
+    <touch name="t_left"  site="s_left"  cutoff="1.0"/>
+    <touch name="t_right" site="s_right" cutoff="1.0"/>
   </sensor>
 
 </mujoco>

@@ -38,12 +38,14 @@ class GridCellRandomWalkForceDriver:
             raise ValueError("action_smoothing must be in [0, 1)")
         if self.config.max_action_delta <= 0.0:
             raise ValueError("max_action_delta must be positive")
-        if self.config.arena_max <= self.config.arena_min:
-            raise ValueError("arena_max must be greater than arena_min")
-        if self.config.boundary_margin < 0.0:
-            raise ValueError("boundary_margin must be >= 0")
-        if self.config.boundary_lookahead_time < 0.0:
-            raise ValueError("boundary_lookahead_time must be >= 0")
+        if self.config.touch_tangent_weight < 0.0:
+            raise ValueError("touch_tangent_weight must be >= 0")
+        if self.config.touch_away_weight < 0.0:
+            raise ValueError("touch_away_weight must be >= 0")
+        if self.config.touch_tangent_weight == 0.0 and self.config.touch_away_weight == 0.0:
+            raise ValueError("at least one touch response weight must be positive")
+        if self.config.touch_jitter_angle < 0.0:
+            raise ValueError("touch_jitter_angle must be >= 0")
         if self.config.stuck_threshold < 0.0:
             raise ValueError("stuck_threshold must be >= 0")
         if self.config.stuck_patience <= 0:
@@ -76,28 +78,65 @@ class GridCellRandomWalkForceDriver:
         self._angular_velocity = 0.0
         self._stuck_counter = 0
 
-    def _reflect_heading(self, xy: np.ndarray) -> None:
-        direction = np.array([np.cos(self._heading), np.sin(self._heading)], dtype=np.float32)
-        reflected = False
-        lower = float(self.config.arena_min) + float(self.config.boundary_margin)
-        upper = float(self.config.arena_max) - float(self.config.boundary_margin)
+    @staticmethod
+    def _rotate_vector(vector: np.ndarray, angle: float) -> np.ndarray:
+        cos_angle = float(np.cos(angle))
+        sin_angle = float(np.sin(angle))
+        return np.array(
+            [
+                cos_angle * float(vector[0]) - sin_angle * float(vector[1]),
+                sin_angle * float(vector[0]) + cos_angle * float(vector[1]),
+            ],
+            dtype=np.float32,
+        )
 
-        if xy[0] <= lower and direction[0] < 0.0:
-            direction[0] *= -1.0
-            reflected = True
-        elif xy[0] >= upper and direction[0] > 0.0:
-            direction[0] *= -1.0
-            reflected = True
-        if xy[1] <= lower and direction[1] < 0.0:
-            direction[1] *= -1.0
-            reflected = True
-        elif xy[1] >= upper and direction[1] > 0.0:
-            direction[1] *= -1.0
-            reflected = True
+    def _turn_from_touch(self, touch: np.ndarray, qvel: np.ndarray) -> None:
+        touch = np.asarray(touch, dtype=np.float32).reshape(-1)
+        if touch.size < 4 or float(np.max(touch[:4])) <= 0.0:
+            return
 
-        if not reflected:
-            direction *= -1.0
-        self._heading = self._wrap_to_pi(float(np.arctan2(direction[1], direction[0])))
+        front, back, left, right = touch[:4]
+        away = np.array(
+            [
+                float(back - front),
+                float(right - left),
+            ],
+            dtype=np.float32,
+        )
+        norm = float(np.linalg.norm(away))
+        if norm <= 1e-8:
+            return
+
+        away /= norm
+        tangent = np.array([-away[1], away[0]], dtype=np.float32)
+        reference_velocity = qvel
+        if float(np.linalg.norm(reference_velocity)) <= 1e-8:
+            reference_velocity = self._desired_velocity
+        if float(np.dot(tangent, reference_velocity)) < 0.0:
+            tangent = -tangent
+
+        direction = (
+            float(self.config.touch_tangent_weight) * tangent
+            + float(self.config.touch_away_weight) * away
+        )
+        direction_norm = float(np.linalg.norm(direction))
+        if direction_norm <= 1e-8:
+            return
+        direction /= direction_norm
+
+        jitter = float(
+            self._rng.uniform(
+                -float(self.config.touch_jitter_angle),
+                float(self.config.touch_jitter_angle),
+            )
+        )
+        direction = self._rotate_vector(direction, jitter)
+        away_dot = float(np.dot(direction, away))
+        if away_dot <= 0.0:
+            direction = direction - away_dot * away + 1e-6 * away
+            direction /= float(np.linalg.norm(direction))
+        heading = float(np.arctan2(direction[1], direction[0]))
+        self._heading = self._wrap_to_pi(heading)
         self._angular_velocity = 0.0
         self._stuck_counter = 0
 
@@ -113,31 +152,6 @@ class GridCellRandomWalkForceDriver:
             self._heading + self._angular_velocity * float(self.config.motion_dt)
         )
 
-    def _apply_boundary_reflection(self, xy: np.ndarray, desired_velocity: np.ndarray) -> np.ndarray:
-        velocity = desired_velocity.copy()
-        lower = float(self.config.arena_min) + float(self.config.boundary_margin)
-        upper = float(self.config.arena_max) - float(self.config.boundary_margin)
-        projected = xy + velocity * float(self.config.boundary_lookahead_time)
-        reflected = False
-
-        if (xy[0] <= lower or projected[0] <= self.config.arena_min) and velocity[0] < 0.0:
-            velocity[0] *= -1.0
-            reflected = True
-        elif (xy[0] >= upper or projected[0] >= self.config.arena_max) and velocity[0] > 0.0:
-            velocity[0] *= -1.0
-            reflected = True
-        if (xy[1] <= lower or projected[1] <= self.config.arena_min) and velocity[1] < 0.0:
-            velocity[1] *= -1.0
-            reflected = True
-        elif (xy[1] >= upper or projected[1] >= self.config.arena_max) and velocity[1] > 0.0:
-            velocity[1] *= -1.0
-            reflected = True
-
-        if reflected:
-            self._heading = self._wrap_to_pi(float(np.arctan2(velocity[1], velocity[0])))
-            self._angular_velocity = 0.0
-        return velocity
-
     def _rate_limit_action(self, action: np.ndarray) -> np.ndarray:
         delta = np.clip(
             action - self._prev_action,
@@ -146,13 +160,15 @@ class GridCellRandomWalkForceDriver:
         )
         return self._prev_action + delta
 
-    def act(self, agent_xy: np.ndarray, agent_qvel: np.ndarray, collision: bool) -> np.ndarray:
+    def act(self, agent_xy: np.ndarray, agent_qvel: np.ndarray, touch: np.ndarray | None = None) -> np.ndarray:
         xy = np.asarray(agent_xy, dtype=np.float32)[:2]
         qvel = np.asarray(agent_qvel, dtype=np.float32)[:2]
         self._update_stuck_state(xy)
+        touch_arr = np.asarray([] if touch is None else touch, dtype=np.float32).reshape(-1)
+        has_touch = touch_arr.size > 0 and bool(np.any(touch_arr > 0.0))
 
-        if collision:
-            self._reflect_heading(xy)
+        if has_touch:
+            self._turn_from_touch(touch_arr, qvel)
         elif self._stuck_counter >= self.config.stuck_patience:
             self._resample_heading()
         else:
@@ -160,7 +176,6 @@ class GridCellRandomWalkForceDriver:
 
         speed = self._sample_speed()
         desired_velocity = speed * np.array([np.cos(self._heading), np.sin(self._heading)], dtype=np.float32)
-        desired_velocity = self._apply_boundary_reflection(xy, desired_velocity)
         self._desired_velocity = desired_velocity.astype(np.float32)
 
         action = float(self.config.velocity_tracking_gain) * (self._desired_velocity - qvel)

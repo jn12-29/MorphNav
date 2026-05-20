@@ -82,7 +82,14 @@ def summarize_episode(
     mean_speed = float(speeds.mean()) if speeds.size > 0 else 0.0
     stuck_ratio = float((speeds < 1e-6).mean()) if speeds.size > 0 else 0.0
 
-    collisions = np.asarray([bool(step_info.get("collision", False)) for step_info in info_list], dtype=bool)
+    collisions = np.asarray(
+        [
+            bool(step_info.get("collision", False))
+            or bool(np.any(np.asarray(step_info.get("sensordata", []), dtype=np.float32) > 0.0))
+            for step_info in info_list
+        ],
+        dtype=bool,
+    )
     collision_ratio = float(collisions.mean()) if collisions.size > 0 else 0.0
     goal_reached = bool(info_list[-1].get("success", False)) if info_list else False
 

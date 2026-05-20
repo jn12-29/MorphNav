@@ -30,8 +30,8 @@ class FakeEnv:
         info = {
             "qpos": np.array([0.0, 0.0], dtype=np.float32),
             "qvel": np.array([0.0, 0.0], dtype=np.float32),
+            "sensordata": np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float32),
             "success": False,
-            "collision": False,
         }
         return obs, info
 
@@ -43,16 +43,16 @@ class FakeEnv:
         info = {
             "qpos": qpos,
             "qvel": qvel,
+            "sensordata": np.array([float(self.step_idx), 0.0, 0.0, 0.0], dtype=np.float32),
             "success": self.step_idx >= 3,
-            "collision": False,
             "speed": 1.0,
         }
         return obs, 0.5, self.step_idx >= 3, False, info
 
 
 class ConstantPolicy:
-    def act(self, agent_xy, agent_qvel, collision):
-        del agent_xy, agent_qvel, collision
+    def act(self, agent_xy, agent_qvel, touch):
+        del agent_xy, agent_qvel, touch
         return np.array([0.5, 0.0], dtype=np.float32)
 
 
@@ -60,12 +60,12 @@ class RecordingPolicy:
     def __init__(self) -> None:
         self.calls = []
 
-    def act(self, agent_xy, agent_qvel, collision):
+    def act(self, agent_xy, agent_qvel, touch):
         self.calls.append(
             {
                 "agent_xy": np.asarray(agent_xy, dtype=np.float32).copy(),
                 "agent_qvel": np.asarray(agent_qvel, dtype=np.float32).copy(),
-                "collision": bool(collision),
+                "touch": np.asarray(touch, dtype=np.float32).copy(),
             }
         )
         return np.array([0.5, 0.0], dtype=np.float32)
@@ -87,7 +87,7 @@ def test_build_pointmaze_env_kwargs_and_create_env(monkeypatch):
         achieved_goal_aware=True,
         start_pos_aware=True,
         target_aware=True,
-        xml_file_path="/tmp/point.xml",
+        xml_file_path="/tmp/point_v1.xml",
         success_radius=0.4,
     )
     kwargs = build_pointmaze_env_kwargs(config)
@@ -100,7 +100,7 @@ def test_build_pointmaze_env_kwargs_and_create_env(monkeypatch):
         "achieved_goal_aware": True,
         "start_pos_aware": True,
         "target_aware": True,
-        "xml_file_path": "/tmp/point.xml",
+        "xml_file_path": "/tmp/point_v1.xml",
         "success_radius": 0.4,
     }
     assert "max_episode_steps" not in kwargs
@@ -166,8 +166,10 @@ def test_collect_episode_passes_current_xy_and_qvel_to_policy():
     assert len(policy.calls) == 3
     np.testing.assert_array_equal(policy.calls[0]["agent_xy"], np.array([0.0, 0.0], dtype=np.float32))
     np.testing.assert_array_equal(policy.calls[0]["agent_qvel"], np.array([0.0, 0.0], dtype=np.float32))
+    np.testing.assert_array_equal(policy.calls[0]["touch"], np.zeros(4, dtype=np.float32))
     np.testing.assert_array_equal(policy.calls[1]["agent_xy"], np.array([1.0, 0.0], dtype=np.float32))
     np.testing.assert_array_equal(policy.calls[1]["agent_qvel"], np.array([1.0, 0.0], dtype=np.float32))
+    np.testing.assert_array_equal(policy.calls[1]["touch"], np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32))
 
 
 def test_collect_episode_can_be_annotated():

@@ -16,10 +16,10 @@ GridCellRandomWalkForceDriver = pointmaze_policy.GridCellRandomWalkForceDriver
 PointMazePolicyConfig = pointmaze_policy.PointMazePolicyConfig
 
 
-def _act(driver, xy, qvel=None, collision=False):
+def _act(driver, xy, qvel=None, touch=None):
     if qvel is None:
         qvel = np.zeros(2, dtype=np.float32)
-    return driver.act(agent_xy=xy, agent_qvel=qvel, collision=collision)
+    return driver.act(agent_xy=xy, agent_qvel=qvel, touch=touch)
 
 
 def test_grid_cell_force_driver_is_deterministic_for_seed():
@@ -27,9 +27,6 @@ def test_grid_cell_force_driver_is_deterministic_for_seed():
         speed_mean=0.2,
         speed_std=0.0,
         angular_velocity_std=0.0,
-        arena_min=-100.0,
-        arena_max=100.0,
-        boundary_margin=0.0,
         stuck_patience=100,
     )
     driver_a = GridCellRandomWalkForceDriver(config=config, seed=0)
@@ -57,9 +54,6 @@ def test_grid_cell_force_driver_explores_both_global_action_axes():
         velocity_tracking_gain=4.0,
         action_smoothing=0.0,
         max_action_delta=1.0,
-        arena_min=-100.0,
-        arena_max=100.0,
-        boundary_margin=0.0,
         stuck_patience=100,
     )
     driver = GridCellRandomWalkForceDriver(config=config, seed=3)
@@ -86,9 +80,6 @@ def test_grid_cell_force_driver_tracks_desired_velocity_with_force_feedback():
         velocity_tracking_gain=2.0,
         action_smoothing=0.0,
         max_action_delta=1.0,
-        arena_min=-100.0,
-        arena_max=100.0,
-        boundary_margin=0.0,
         stuck_patience=100,
     )
     driver = GridCellRandomWalkForceDriver(config=config, seed=4)
@@ -102,7 +93,7 @@ def test_grid_cell_force_driver_tracks_desired_velocity_with_force_feedback():
     assert np.linalg.norm(matched_action) < np.linalg.norm(accelerating_action)
 
 
-def test_grid_cell_force_driver_reflects_velocity_near_boundaries():
+def test_grid_cell_force_driver_slides_from_touch_sensors_with_away_bias():
     config = PointMazePolicyConfig(
         speed_mean=0.2,
         speed_std=0.0,
@@ -110,20 +101,59 @@ def test_grid_cell_force_driver_reflects_velocity_near_boundaries():
         velocity_tracking_gain=4.0,
         action_smoothing=0.0,
         max_action_delta=1.0,
-        arena_min=-2.4,
-        arena_max=2.4,
-        boundary_margin=0.2,
-        boundary_lookahead_time=0.5,
+        touch_tangent_weight=0.65,
+        touch_away_weight=0.35,
+        touch_jitter_angle=0.0,
     )
     driver = GridCellRandomWalkForceDriver(config=config, seed=0)
     driver._heading = 0.0
 
-    right_wall_action = _act(driver, np.array([2.35, 0.0], dtype=np.float32))
+    right_wall_action = _act(
+        driver,
+        np.array([2.35, 0.0], dtype=np.float32),
+        qvel=np.array([0.0, -0.1], dtype=np.float32),
+        touch=np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32),
+    )
     assert right_wall_action[0] < 0.0
+    assert right_wall_action[1] < 0.0
 
     driver._heading = 0.5 * np.pi
-    top_wall_action = _act(driver, np.array([0.0, 2.35], dtype=np.float32))
+    top_wall_action = _act(
+        driver,
+        np.array([0.0, 2.35], dtype=np.float32),
+        qvel=np.array([0.1, 0.0], dtype=np.float32),
+        touch=np.array([0.0, 0.0, 1.0, 0.0], dtype=np.float32),
+    )
+    assert top_wall_action[0] > 0.0
     assert top_wall_action[1] < 0.0
+
+
+def test_grid_cell_force_driver_keeps_touch_jitter_deterministic_for_seed():
+    config = PointMazePolicyConfig(
+        speed_mean=0.2,
+        speed_std=0.0,
+        angular_velocity_std=0.0,
+        velocity_tracking_gain=4.0,
+        action_smoothing=0.0,
+        max_action_delta=1.0,
+    )
+    driver_a = GridCellRandomWalkForceDriver(config=config, seed=12)
+    driver_b = GridCellRandomWalkForceDriver(config=config, seed=12)
+
+    action_a = _act(
+        driver_a,
+        np.array([2.35, 0.0], dtype=np.float32),
+        qvel=np.array([0.0, -0.1], dtype=np.float32),
+        touch=np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32),
+    )
+    action_b = _act(
+        driver_b,
+        np.array([2.35, 0.0], dtype=np.float32),
+        qvel=np.array([0.0, -0.1], dtype=np.float32),
+        touch=np.array([1.0, 0.0, 0.0, 0.0], dtype=np.float32),
+    )
+
+    np.testing.assert_allclose(action_a, action_b)
 
 
 def test_default_stuck_threshold_is_below_normal_pointmaze_step_displacement():

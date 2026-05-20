@@ -43,7 +43,7 @@ class PointEnv(MujocoEnv):
         self.sensor_aware = kwargs.pop("sensor_aware", True)
         if xml_file is None:
             xml_file = path.join(
-                path.dirname(path.realpath(__file__)), "assets", "point.xml"
+                path.dirname(path.realpath(__file__)), "assets", "point_v1.xml"
             )
 
         super().__init__(
@@ -82,15 +82,21 @@ class PointEnv(MujocoEnv):
 
         return obs, reward, terminated, truncated, info
 
-    def _get_obs(self) -> np.ndarray:
-        obs_list = [self.data.qvel]
-        if self.data.sensordata.size > 0 and self.sensor_aware:
-            obs_list.append(self.data.sensordata)
-        return np.concatenate(obs_list).ravel(), {
+    def _get_info(self) -> dict:
+        return {
             "qpos": self.data.qpos.copy(),
             "qvel": self.data.qvel.copy(),
             "sensordata": self.data.sensordata.copy(),
         }
+
+    def _get_reset_info(self) -> dict:
+        return self._get_info()
+
+    def _get_obs(self) -> np.ndarray:
+        obs_list = [self.data.qvel]
+        if self.data.sensordata.size > 0 and self.sensor_aware:
+            obs_list.append(self.data.sensordata)
+        return np.concatenate(obs_list).ravel(), self._get_info()
 
     # def _clip_velocity(self):
     #     """The velocity needs to be limited because the ball is
@@ -143,7 +149,7 @@ class PointMazeEnv(MazeEnv, EzPickle):
         self.min_vel_penalty = min_vel_penalty
         point_xml_file_path = kwargs.pop(
             "xml_file_path",
-            path.join(path.dirname(path.realpath(__file__)), "assets", "point.xml"),
+            path.join(path.dirname(path.realpath(__file__)), "assets", "point_v1.xml"),
         )
         print("Loading point maze from XML file:", point_xml_file_path)
         global SUCCESS_RADIUS

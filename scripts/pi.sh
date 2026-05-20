@@ -1,3 +1,4 @@
+## phase1_pointmaze_pi preset keeps sensor_aware=True and uses tangent-biased touch response.
 python scripts/generate_pointmaze_dataset.py \
   --preset phase1_pointmaze_pi \
   --output-dir recorded_data \

@@ -81,9 +81,11 @@ Dataset metadata should record the data-collection policy as `GridCellRandomWalk
 
 ### Collection Policy
 
-Phase 1 PointMaze datasets use a grid-cells-style smooth velocity random walk tracked through the environment's global `x/y` motor action space. The driver samples a correlated heading process and positive speed like the synthetic random-walk reference workflow, converts them to a desired velocity, and uses current `qvel` feedback to emit clipped two-dimensional force actions. Boundary handling reflects the desired heading/velocity instead of pulling trajectories toward the center.
+Phase 1 PointMaze datasets use a grid-cells-style smooth velocity random walk tracked through the environment's global `x/y` motor action space. The driver samples a correlated heading process and positive speed like the synthetic random-walk reference workflow, converts them to a desired velocity, and uses current `qvel` feedback to emit clipped two-dimensional force actions. It does not use hard-coded arena boundaries, lookahead reflection, or a synthetic collision flag. Wall-contact recovery comes from the four touch-sensor channels exposed by the sensor-aware PointMaze observation. On touch, the driver estimates an observable away-from-wall direction from the four sensor values, chooses the tangent sign from current `qvel` or the previous desired velocity, and combines tangent-biased motion with a weaker away-from-wall component plus bounded jitter. It does not randomly resample heading inside the touch branch. The Phase 1 preset keeps `sensor_aware=True`, so `obs/observation` contains velocity plus those four touch-sensor channels.
 
 Do not use egocentric command semantics for PointMaze dataset generation. The PointMaze MuJoCo model exposes two global slide-joint motor actions.
+
+The touch-sensor recovery direction is an observable approximation from the four sensor sites, not an exact MuJoCo contact normal. Exact continuous contact normals require reading MuJoCo contact data directly and are not part of the Phase 1 dataset driver.
 
 ### Required Arrays
 
@@ -110,7 +112,7 @@ Add selected policy observation arrays:
 - `obs/achieved_goal`
 - `obs/desired_goal`
 
-The `obs/*` array shapes follow the current PointMaze observation space for each key. Store these arrays as `float32`, matching the collector's normalized episode arrays.
+The `obs/*` array shapes follow the current PointMaze observation space for each key. Store these arrays as `float32`, matching the collector's normalized episode arrays. For the Phase 1 preset, `obs/observation` is six-dimensional: two MuJoCo velocity coordinates followed by four touch-sensor channels.
 
 Do not persist raw unbounded `info` payloads in Phase 1.
 

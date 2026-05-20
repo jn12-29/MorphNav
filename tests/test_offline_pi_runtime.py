@@ -103,6 +103,10 @@ def test_workflow_config_records_tensorboard_dependency_fallback(tmp_path: Path)
         eval_every_epochs=0,
         eval_at_start=False,
         eval_artifact_every_epochs=0,
+        eval_gridscore_every_epochs=0,
+        gridscore_n_bins=32,
+        gridscore_max_steps=None,
+        gridscore_top_k=8,
         checkpoint_every_epochs=0,
         save_final_checkpoint=False,
         tensorboard=True,
@@ -171,3 +175,98 @@ def test_offline_pi_cli_tensorboard_defaults_on():
 
     assert args.tensorboard is True
     assert disabled.tensorboard is False
+
+
+def test_offline_pi_cli_gridscore_defaults_off():
+    parser = build_parser()
+
+    args = parser.parse_args(["--dataset-root", "data/datasets/pointmaze/phase1_pi/rehearsal_seed0"])
+
+    assert args.eval_gridscore_every_epochs == 0
+    assert args.gridscore_n_bins == 32
+    assert args.gridscore_max_steps is None
+    assert args.gridscore_top_k == 8
+
+
+def test_workflow_probe_records_gridscore_metrics_and_summary(tmp_path: Path):
+    dataset_root = tmp_path / "dataset"
+    dataset_root.mkdir()
+    args = SimpleNamespace(
+        mode="probe",
+        dataset_root=dataset_root,
+        probe_dataset_root=None,
+        model_path=None,
+        output_dir=None,
+        run_name=None,
+        learning_rate=1e-4,
+        batch_size_sequences=2,
+        max_seq_len=None,
+        max_updates=None,
+        epochs=1,
+        seed=0,
+        device="cpu",
+        log_every_updates=0,
+        eval_every_epochs=0,
+        eval_at_start=False,
+        eval_artifact_every_epochs=0,
+        eval_gridscore_every_epochs=1,
+        gridscore_n_bins=8,
+        gridscore_max_steps=16,
+        gridscore_top_k=2,
+        checkpoint_every_epochs=0,
+        save_final_checkpoint=False,
+        tensorboard=False,
+        tensorboard_log_dir=None,
+    )
+    probe_metrics = {
+        "offline_pi/probe/loss": 1.0,
+        "offline_pi/probe/localization_mse": 2.0,
+        "offline_pi/probe/localization_rmse": 3.0,
+        "offline_pi/probe/localization_mae": 4.0,
+        "offline_pi/probe/x_mae": 5.0,
+        "offline_pi/probe/y_mae": 6.0,
+        "offline_pi/probe/steps": 7.0,
+        "offline_pi/probe/sequence_count": 8.0,
+    }
+    gridscore_summary = {
+        "best_grid_score": 0.25,
+        "best_unit": 3,
+        "mean_grid_score": 0.1,
+        "valid_units": 4,
+        "unit_count": 4,
+        "num_steps": 16,
+        "bounds": [0.0, 1.0, 0.0, 1.0],
+        "n_bins": 8,
+        "max_steps": 16,
+        "max_units": None,
+        "top_k": 2,
+    }
+
+    with (
+        patch("components.offline_pi_workflow.run_offline_pi_probe", return_value=probe_metrics),
+        patch("components.offline_pi_gridscore.export_gridscore_artifacts", return_value=gridscore_summary) as gridscore_mock,
+    ):
+        run_offline_pi_workflow(
+            object(),
+            args,
+            output_dir=tmp_path / "run",
+            run_name="run",
+            fresh_model_settings={},
+        )
+
+    gridscore_mock.assert_called_once()
+    assert gridscore_mock.call_args.kwargs["max_units"] is None
+    probe_payload = json.loads((tmp_path / "run" / "metrics" / "probe_epoch_0000.json").read_text(encoding="utf-8"))
+    assert probe_payload["offline_pi/probe/gridscore/best"] == 0.25
+    assert probe_payload["offline_pi/probe/gridscore/best_unit"] == 3.0
+    assert probe_payload["offline_pi/probe/gridscore/valid_units"] == 4.0
+
+    rows = [
+        json.loads(row)
+        for row in (tmp_path / "run" / "metrics" / "metrics.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    probe_event = next(row for row in rows if row["event"] == "probe")
+    assert probe_event["offline_pi/probe/gridscore/mean"] == 0.1
+    assert probe_event["gridscore_summary"] == gridscore_summary
+    final_metrics = json.loads((tmp_path / "run" / "metrics" / "offline_pi_metrics.json").read_text(encoding="utf-8"))
+    assert final_metrics["offline_pi/probe/gridscore/best"] == 0.25

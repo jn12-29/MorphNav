@@ -13,6 +13,7 @@ from components.dataset_gen.pointmaze_config import (
 )
 from components.dataset_gen.pointmaze_zarr_writer import write_shard
 from components.offline_pi_eval_artifacts import export_probe_artifacts
+from components.offline_pi_gridscore import export_gridscore_artifacts
 from components.offline_pi_rehearsal import (
     count_offline_pi_sequences,
     compute_offline_pi_loss,
@@ -237,6 +238,42 @@ def test_export_probe_artifacts_writes_masked_coordinate_diagnostics(tmp_path: P
     assert (output_dir / "coord_scatter_epoch_0000.png").is_file()
     assert (output_dir / "error_hist_epoch_0000.png").is_file()
     assert (output_dir / "spatial_error_heatmap_epoch_0000.png").is_file()
+
+
+def test_export_gridscore_artifacts_writes_summary_data_and_plots(tmp_path: Path):
+    dataset_root = _write_dataset(tmp_path / "dataset")
+    output_dir = tmp_path / "eval" / "gridscore_epoch_0000"
+    policy = _make_policy()
+    model = SimpleNamespace(policy=policy)
+
+    summary = export_gridscore_artifacts(
+        model,
+        dataset_root,
+        output_dir,
+        batch_size_sequences=2,
+        max_seq_len=2,
+        n_bins=8,
+        max_steps=5,
+        max_units=3,
+        top_k=2,
+    )
+
+    assert summary["unit_count"] == 3
+    assert summary["num_steps"] == 5
+    assert summary["n_bins"] == 8
+    assert summary["max_steps"] == 5
+    assert summary["max_units"] == 3
+    assert summary["top_k"] == 2
+    with np.load(output_dir / "gridscore_data.npz") as data:
+        assert data["positions"].shape == (5, 2)
+        assert data["activations"].shape == (5, 3)
+        assert data["ratemaps"].shape == (3, 8, 8)
+        assert data["autocorrs"].shape == (3, 15, 15)
+        assert data["grid_scores"].shape == (3,)
+        assert data["bounds"].shape == (4,)
+    assert (output_dir / "gridscore_summary.json").is_file()
+    assert (output_dir / "top_grid_cells.png").is_file()
+    assert (output_dir / "spatial_ratemaps_grid.png").is_file()
 
 
 def test_rehearsal_rejects_policy_optimizer(tmp_path: Path):

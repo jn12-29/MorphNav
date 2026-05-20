@@ -79,6 +79,10 @@ def _effective_config(
         "tensorboard_requested": args.tensorboard,
         "tensorboard_log_dir": str(tensorboard_log_dir) if tensorboard_log_dir is not None else None,
         "eval_artifact_every_epochs": args.eval_artifact_every_epochs,
+        "eval_gridscore_every_epochs": args.eval_gridscore_every_epochs,
+        "gridscore_n_bins": args.gridscore_n_bins,
+        "gridscore_max_steps": args.gridscore_max_steps,
+        "gridscore_top_k": args.gridscore_top_k,
         "checkpoint_every_epochs": args.checkpoint_every_epochs,
         "save_final_checkpoint": args.save_final_checkpoint,
         "fresh_model_settings": _jsonable(fresh_model_settings),
@@ -132,6 +136,14 @@ def _final_epoch_from_metrics(metrics: dict[str, float], fallback: int) -> int:
     return int(metrics.get("offline_pi/final_epoch", float(fallback)))
 
 
+def _should_export_gridscore(args: Any, epoch: int) -> bool:
+    return args.eval_gridscore_every_epochs > 0 and epoch % args.eval_gridscore_every_epochs == 0
+
+
+def _gridscore_output_dir(eval_dir: Path, epoch: int) -> Path:
+    return eval_dir / f"gridscore_epoch_{epoch:04d}"
+
+
 def _run_probe(
     model: Any,
     dataset_root: Path,
@@ -145,6 +157,7 @@ def _run_probe(
     metrics_jsonl: Path,
     tensorboard_writer: TensorBoardRunWriter,
     export_artifacts: bool,
+    export_gridscore: bool,
 ) -> dict[str, float]:
     logger.info("probe start epoch=%04d dataset=%s", epoch, dataset_root)
     started = time.time()
@@ -155,7 +168,6 @@ def _run_probe(
         max_seq_len=args.max_seq_len,
     )
     metrics["offline_pi/probe/seconds"] = float(time.time() - started)
-    write_json_atomic(_probe_epoch_path(dirs["metrics"], epoch), metrics)
     artifact_summary = None
     if export_artifacts:
         from components.offline_pi_eval_artifacts import export_probe_artifacts
@@ -168,6 +180,24 @@ def _run_probe(
             batch_size_sequences=args.batch_size_sequences,
             max_seq_len=args.max_seq_len,
         )
+    gridscore_summary = None
+    if export_gridscore:
+        from components.offline_pi_gridscore import export_gridscore_artifacts, gridscore_metrics_from_summary
+
+        gridscore_started = time.time()
+        gridscore_summary = export_gridscore_artifacts(
+            model,
+            dataset_root,
+            _gridscore_output_dir(dirs["eval"], epoch),
+            batch_size_sequences=args.batch_size_sequences,
+            max_seq_len=args.max_seq_len,
+            n_bins=args.gridscore_n_bins,
+            max_steps=args.gridscore_max_steps,
+            max_units=None,
+            top_k=args.gridscore_top_k,
+        )
+        metrics.update(gridscore_metrics_from_summary(gridscore_summary, seconds=time.time() - gridscore_started))
+    write_json_atomic(_probe_epoch_path(dirs["metrics"], epoch), metrics)
     append_jsonl(
         metrics_jsonl,
         make_event(
@@ -178,6 +208,7 @@ def _run_probe(
             global_step=global_step,
             metrics=metrics,
             artifact_summary=artifact_summary,
+            gridscore_summary=gridscore_summary,
         ),
     )
     tensorboard_log_probe(tensorboard_writer, metrics, step=global_step)
@@ -188,6 +219,14 @@ def _run_probe(
         metrics["offline_pi/probe/localization_mse"],
         metrics["offline_pi/probe/localization_rmse"],
     )
+    if gridscore_summary is not None:
+        logger.info(
+            "gridscore complete epoch=%04d best=%.6f best_unit=%d valid_units=%d",
+            epoch,
+            gridscore_summary["best_grid_score"],
+            gridscore_summary["best_unit"],
+            gridscore_summary["valid_units"],
+        )
     return metrics
 
 
@@ -263,6 +302,7 @@ def _run_train(
             metrics_jsonl=metrics_jsonl,
             tensorboard_writer=tensorboard_writer,
             export_artifacts=args.eval_artifact_every_epochs > 0,
+            export_gridscore=_should_export_gridscore(args, 0),
         )
 
     def on_epoch_start(payload: dict[str, Any]) -> None:
@@ -338,6 +378,7 @@ def _run_train(
                     args.eval_artifact_every_epochs > 0
                     and payload["epoch"] % args.eval_artifact_every_epochs == 0
                 ),
+                export_gridscore=_should_export_gridscore(args, payload["epoch"]),
             )
         if args.checkpoint_every_epochs > 0 and payload["epoch"] % args.checkpoint_every_epochs == 0:
             _save_checkpoint(
@@ -413,6 +454,7 @@ def _run_probe_only(
         metrics_jsonl=metrics_jsonl,
         tensorboard_writer=tensorboard_writer,
         export_artifacts=args.eval_artifact_every_epochs > 0,
+        export_gridscore=_should_export_gridscore(args, 0),
     )
 
 

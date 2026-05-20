@@ -48,6 +48,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--eval-at-start", dest="eval_at_start", action="store_true", default=True)
     parser.add_argument("--no-eval-at-start", dest="eval_at_start", action="store_false")
     parser.add_argument("--eval-artifact-every-epochs", type=int, default=0)
+    parser.add_argument("--eval-gridscore-every-epochs", type=int, default=0)
+    parser.add_argument("--gridscore-n-bins", type=int, default=32)
+    parser.add_argument("--gridscore-max-steps", type=int, default=None)
+    parser.add_argument("--gridscore-top-k", type=int, default=8)
     parser.add_argument("--checkpoint-every-epochs", type=int, default=0)
     parser.add_argument("--save-final-checkpoint", dest="save_final_checkpoint", action="store_true", default=True)
     parser.add_argument("--no-save-final-checkpoint", dest="save_final_checkpoint", action="store_false")
@@ -131,6 +135,14 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         parser.error("--eval-every-epochs must be >= 0")
     if args.eval_artifact_every_epochs < 0:
         parser.error("--eval-artifact-every-epochs must be >= 0")
+    if args.eval_gridscore_every_epochs < 0:
+        parser.error("--eval-gridscore-every-epochs must be >= 0")
+    if args.gridscore_n_bins <= 0:
+        parser.error("--gridscore-n-bins must be > 0")
+    if args.gridscore_max_steps is not None and args.gridscore_max_steps <= 0:
+        parser.error("--gridscore-max-steps must be > 0 when provided")
+    if args.gridscore_top_k <= 0:
+        parser.error("--gridscore-top-k must be > 0")
     if args.checkpoint_every_epochs < 0:
         parser.error("--checkpoint-every-epochs must be >= 0")
 

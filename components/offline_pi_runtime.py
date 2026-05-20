@@ -173,9 +173,14 @@ def tensorboard_log_probe(writer: TensorBoardRunWriter, metrics: dict[str, float
         "probe/localization_mae": "offline_pi/probe/localization_mae",
         "probe/x_mae": "offline_pi/probe/x_mae",
         "probe/y_mae": "offline_pi/probe/y_mae",
+        "probe/gridscore/best": "offline_pi/probe/gridscore/best",
+        "probe/gridscore/mean": "offline_pi/probe/gridscore/mean",
+        "probe/gridscore/valid_units": "offline_pi/probe/gridscore/valid_units",
+        "probe/gridscore/seconds": "offline_pi/probe/gridscore/seconds",
     }
     for tag, key in mapping.items():
-        writer.add_scalar(tag, float(metrics[key]), step)
+        if key in metrics:
+            writer.add_scalar(tag, float(metrics[key]), step)
 
 
 def save_model_checkpoint(

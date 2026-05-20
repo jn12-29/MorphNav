@@ -72,6 +72,8 @@ python scripts/offline_pi_rehearsal.py \
 
 By default, the command creates a timestamped run under `runs/offline_pi/pointmaze_phase1_seed<seed>_<YYYYMMDD_HHMMSS>/`. Each run writes `train.log`, `config.json`, `metrics/metrics.jsonl`, `metrics/offline_pi_metrics.json`, probe summaries under `metrics/probe_epoch_XXXX.json`, checkpoints under `models/`, and optional probe diagnostics under `eval/`. Pass `--run-name` for a stable name or `--output-dir` for an explicit path. TensorBoard scalar logging is attempted by default under the run's `tensorboard/` directory; if TensorBoard dependencies are unavailable, training falls back to JSON and text logging. Use `--no-tensorboard` to skip TensorBoard explicitly. Set `--eval-artifact-every-epochs N` to write probe NPZ, JSON, and PNG localization diagnostics every `N` evaluated epochs.
 
+Grid-score analysis during probe eval is opt-in. Set `--eval-gridscore-every-epochs N` to collect PI bottleneck activity on the probe dataset every `N` evaluated epochs and write `eval/gridscore_epoch_XXXX/gridscore_summary.json`, `gridscore_data.npz`, `top_grid_cells.png`, and `spatial_ratemaps_grid.png`. The probe JSON, `metrics.jsonl`, final metrics JSON, and TensorBoard include `offline_pi/probe/gridscore/*` summaries for epochs where the analysis ran. Use `--gridscore-max-steps` to bound training-time cost.
+
 Run an existing checkpoint on a held-out dataset without training updates:
 
 ```bash
@@ -90,7 +92,7 @@ python scripts/analyze_offline_pi_representations.py \
   --dataset-root data/datasets/pointmaze/phase1_pi/probe_seed1
 ```
 
-By default, representation analysis writes under `<offline-pi-run>/analysis/representations/<dataset-root-name>/` and includes `analysis_config.json` with the source model, dataset, and analysis parameters. Pass `--output-dir` to override that location.
+By default, representation analysis writes under `<offline-pi-run>/analysis/representations/<dataset-root-name>/` and includes `analysis_config.json` with the source model, dataset, and analysis parameters. It uses the same grid-score implementation as probe-time eval. Pass `--output-dir` to override that location.
 
 ## Train
 

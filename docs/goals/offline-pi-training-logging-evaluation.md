@@ -14,7 +14,7 @@ The workflow must record the effective run configuration, stream useful training
 - Model family: `PathIntegrationRecurrentPPO` with `PathIntegrationRecurrentActorCriticPolicy`.
 - Training objective: keep the existing place-cell cross-entropy objective.
 - Localization metrics: report decoded coordinate metrics from place-cell probabilities.
-- Representation analysis: keep the existing `scripts/analyze_offline_pi_representations.py` workflow, but make its outputs easier to associate with a run.
+- Representation analysis: keep the standalone `scripts/analyze_offline_pi_representations.py` workflow and add an explicit opt-in path that runs bottleneck grid-score analysis during probe evaluation.
 
 Out of scope:
 
@@ -47,6 +47,11 @@ runs/offline_pi/<run-name>/
     coord_scatter_epoch_XXXX.png
     error_hist_epoch_XXXX.png
     spatial_error_heatmap_epoch_XXXX.png
+    gridscore_epoch_XXXX/
+      gridscore_summary.json
+      gridscore_data.npz
+      top_grid_cells.png
+      spatial_ratemaps_grid.png
 ```
 
 `offline_pi_metrics.json` remains the final compact summary for compatibility with existing users and scripts. `metrics.jsonl` is the append-only event stream for progress, epoch summaries, probe summaries, and checkpoint events.
@@ -76,6 +81,10 @@ The config must include:
   - `eval_at_start`
   - `tensorboard_log_dir`
   - `eval_artifact_every_epochs`
+  - `eval_gridscore_every_epochs`
+  - `gridscore_n_bins`
+  - `gridscore_max_steps`
+  - `gridscore_top_k`
   - `checkpoint_every_epochs`
   - `save_final_checkpoint`
 - Fresh-model settings loaded from `rl-baselines3-zoo/conf/maze_pi.yml`.
@@ -155,6 +164,14 @@ Probe events include:
 - `offline_pi/probe/sequence_count`
 - `offline_pi/probe/seconds`
 
+When grid-score analysis is enabled for a probe event, that event also includes:
+
+- `offline_pi/probe/gridscore/best`
+- `offline_pi/probe/gridscore/best_unit`
+- `offline_pi/probe/gridscore/mean`
+- `offline_pi/probe/gridscore/valid_units`
+- `offline_pi/probe/gridscore/seconds`
+
 `metrics/offline_pi_metrics.json` contains the final training metrics plus the latest probe metrics when a probe dataset is provided.
 
 ## Logging Frequency
@@ -166,6 +183,10 @@ Add CLI parameters:
 - `--eval-at-start`
 - `--no-eval-at-start`
 - `--eval-artifact-every-epochs`
+- `--eval-gridscore-every-epochs`
+- `--gridscore-n-bins`
+- `--gridscore-max-steps`
+- `--gridscore-top-k`
 
 `--log-every-updates 0` means the script chooses a bounded default that records progress roughly ten times per epoch. Positive values record every N optimizer updates.
 
@@ -174,6 +195,10 @@ Add CLI parameters:
 `--eval-at-start` records a baseline probe at epoch 0 before any optimizer update. It is effective only when `--probe-dataset-root` is set.
 
 `--eval-artifact-every-epochs 0` disables image and NPZ evaluation artifacts. Numeric probe metrics can still run.
+
+`--eval-gridscore-every-epochs 0` disables grid-score analysis during training and probe evaluation. Positive values run bottleneck grid-score analysis on the probe dataset every N evaluated epochs. The epoch 0 baseline probe is eligible when `--eval-at-start` is enabled and the value is positive.
+
+Grid-score analysis defaults to `--gridscore-n-bins 32`, `--gridscore-top-k 8`, and no step cap unless `--gridscore-max-steps` is provided. Probe-time grid-score eval analyzes all bottleneck units.
 
 ## Baseline And Periodic Probe
 
@@ -192,6 +217,44 @@ metrics/probe_epoch_XXXX.json
 Probe evaluation never updates model parameters.
 
 Probe metrics use the same decoded coordinate calculation as training metrics so that train and probe localization metrics are directly comparable.
+
+## Probe Grid-Score Analysis
+
+When grid-score analysis is enabled for a selected probe epoch, the workflow collects PI bottleneck activity on the probe dataset, computes spatial rate maps, computes 2D autocorrelograms, and reports grid-score summaries without updating model parameters.
+
+Each selected epoch writes:
+
+```text
+eval/gridscore_epoch_XXXX/
+  gridscore_summary.json
+  gridscore_data.npz
+  top_grid_cells.png
+  spatial_ratemaps_grid.png
+```
+
+`gridscore_summary.json` contains:
+
+- `best_grid_score`
+- `best_unit`
+- `mean_grid_score`
+- `valid_units`
+- `unit_count`
+- `num_steps`
+- `bounds`
+- `n_bins`
+- `max_steps`
+- `top_k`
+
+`gridscore_data.npz` contains:
+
+- `positions`
+- `activations`
+- `ratemaps`
+- `autocorrs`
+- `grid_scores`
+- `bounds`
+
+The probe JSON, JSONL probe event, final metrics JSON, and TensorBoard scalars include grid-score summaries only for epochs where grid-score analysis ran. If no valid grid scores are available, numeric summary fields are stored as `NaN` and `valid_units` is `0`.
 
 ## TensorBoard
 
@@ -222,10 +285,14 @@ Required scalar tags:
 - `probe/localization_mae`
 - `probe/x_mae`
 - `probe/y_mae`
+- `probe/gridscore/best`
+- `probe/gridscore/mean`
+- `probe/gridscore/valid_units`
+- `probe/gridscore/seconds`
 
 The effective config is written as a TensorBoard text summary named `run/config` when the writer supports text summaries.
 
-If TensorBoard dependencies are unavailable and TensorBoard was explicitly requested, the script should fail with a clear dependency message. If TensorBoard was not requested, JSON and text logging continue without TensorBoard.
+If TensorBoard dependencies are unavailable, the run records the disabled reason in `config.json` and continues with JSON and text logging.
 
 ## Coordinate Prediction Helper
 
@@ -284,6 +351,8 @@ The scatter plot compares predicted xy against target xy. The histogram plots Eu
 
 Evaluation artifacts are written only for probe datasets, not for training batches.
 
+Grid-score artifacts are also written only for probe datasets and only when `--eval-gridscore-every-epochs` selects that probe epoch.
+
 ## Checkpoints
 
 Add CLI parameters:
@@ -332,6 +401,7 @@ Suggested helper modules:
 
 - `components/offline_pi_runtime.py`
 - `components/offline_pi_eval_artifacts.py`
+- `components/offline_pi_gridscore.py`
 
 Suggested responsibilities:
 
@@ -339,6 +409,7 @@ Suggested responsibilities:
 - `components/offline_pi_rehearsal.py`: dataset batching, PI loss, PI probe, PI train loop.
 - `components/offline_pi_runtime.py`: run directory setup, logger, config writing, JSONL event writing, TensorBoard writer, checkpoint metadata.
 - `components/offline_pi_eval_artifacts.py`: coordinate prediction export and diagnostic plots.
+- `components/offline_pi_gridscore.py`: bottleneck activity collection, spatial ratemap computation, autocorrelogram/grid-score metrics, and grid-score artifact export.
 
 Avoid broad refactors of online PPO training code.
 
@@ -362,6 +433,8 @@ The work is complete when:
 - Update and epoch metrics are visible during training in stdout and `train.log`.
 - TensorBoard scalar logging works when explicitly enabled.
 - Probe artifact export writes NPZ, JSON, and PNG diagnostics according to `--eval-artifact-every-epochs`.
+- Probe grid-score analysis writes summary JSON, NPZ data, and PNG diagnostics according to `--eval-gridscore-every-epochs`.
+- Probe grid-score summaries appear in `metrics.jsonl`, `offline_pi_metrics.json`, and TensorBoard only for selected probe epochs.
 - Checkpoint files and sidecar metadata are written according to `--checkpoint-every-epochs`.
 - Existing final metrics JSON remains available at `metrics/offline_pi_metrics.json`.
 - Probe mode still works without training updates.
@@ -388,6 +461,8 @@ conda run -n mz python scripts/offline_pi_rehearsal.py \
   --log-every-updates 1 \
   --eval-every-epochs 1 \
   --eval-artifact-every-epochs 1 \
+  --eval-gridscore-every-epochs 1 \
+  --gridscore-max-steps 256 \
   --checkpoint-every-epochs 1
 ```
 

@@ -15,6 +15,7 @@ python scripts/generate_pointmaze_dataset.py \
 
 # Offline Phase 1 PI rehearsal. maze_pi.yml encodes obs/start_pos into LSTM initial states.
 # Metrics include full-sequence and first-step localization errors.
+# Fresh models use rl-baselines3-zoo/conf/maze_pi.yml unless --config-path overrides it.
 # eval-every-epochs controls probe frequency.
 # eval-artifact-every-epochs writes decoded-vs-target localization visualizations.
 # eval-gridscore-every-epochs writes bottleneck ratemap/SAC/grid-score visualizations.

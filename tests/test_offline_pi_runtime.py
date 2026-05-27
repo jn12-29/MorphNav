@@ -12,7 +12,7 @@ from components.offline_pi_runtime import (
     write_json_atomic,
 )
 from components.offline_pi_workflow import _event_epoch_metrics, run_offline_pi_workflow
-from scripts.offline_pi_rehearsal import build_parser
+from scripts.offline_pi_rehearsal import PI_ZOO_CONFIG_PATH, build_parser
 
 
 def test_run_dirs_jsonl_and_atomic_json_contract(tmp_path: Path):
@@ -145,13 +145,14 @@ def test_workflow_config_records_tensorboard_dependency_fallback(tmp_path: Path)
             args,
             output_dir=tmp_path / "run",
             run_name="run",
-            fresh_model_settings={},
+            fresh_model_settings=None,
         )
 
     config = json.loads((tmp_path / "run" / "config.json").read_text(encoding="utf-8"))
     assert config["tensorboard_requested"] is True
     assert config["tensorboard_enabled"] is False
     assert "TensorBoard dependencies are unavailable" in config["tensorboard_disabled_reason"]
+    assert config["fresh_model_config_path"] is None
 
 
 def test_epoch_event_samples_seen_is_cumulative():
@@ -201,6 +202,23 @@ def test_offline_pi_cli_gridscore_defaults_off():
     assert args.gridscore_n_bins == 32
     assert args.gridscore_max_steps is None
     assert args.gridscore_top_k == 8
+
+
+def test_offline_pi_cli_config_path_defaults_and_override():
+    parser = build_parser()
+
+    default_args = parser.parse_args(["--dataset-root", "data/datasets/pointmaze/phase1_pi/rehearsal_seed0"])
+    custom_args = parser.parse_args(
+        [
+            "--dataset-root",
+            "data/datasets/pointmaze/phase1_pi/rehearsal_seed0",
+            "--config-path",
+            "custom/maze_pi.yml",
+        ]
+    )
+
+    assert default_args.config_path == PI_ZOO_CONFIG_PATH
+    assert custom_args.config_path == Path("custom/maze_pi.yml")
 
 
 def test_workflow_probe_records_gridscore_metrics_and_summary(tmp_path: Path):
@@ -274,7 +292,7 @@ def test_workflow_probe_records_gridscore_metrics_and_summary(tmp_path: Path):
             args,
             output_dir=tmp_path / "run",
             run_name="run",
-            fresh_model_settings={},
+            fresh_model_settings=None,
         )
 
     gridscore_mock.assert_called_once()

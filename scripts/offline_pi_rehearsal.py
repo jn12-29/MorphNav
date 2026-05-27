@@ -36,6 +36,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", type=Path, default=None)
     parser.add_argument("--run-name", type=str, default=None)
     parser.add_argument("--model-path", type=Path, default=None)
+    parser.add_argument("--config-path", type=Path, default=PI_ZOO_CONFIG_PATH)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--batch-size-sequences", type=int, default=16)
     parser.add_argument("--max-seq-len", type=int, default=1000)
@@ -103,8 +104,20 @@ def fresh_model_kwargs(*, learning_rate: float, seed: int, device: str, config_p
     return {"policy": policy, "kwargs": hyperparams}
 
 
-def _make_fresh_model(env, *, learning_rate: float, seed: int, device: str) -> PathIntegrationRecurrentPPO:
-    model_config = fresh_model_kwargs(learning_rate=learning_rate, seed=seed, device=device)
+def _make_fresh_model(
+    env,
+    *,
+    learning_rate: float,
+    seed: int,
+    device: str,
+    config_path: Path,
+) -> PathIntegrationRecurrentPPO:
+    model_config = fresh_model_kwargs(
+        learning_rate=learning_rate,
+        seed=seed,
+        device=device,
+        config_path=config_path,
+    )
     return PathIntegrationRecurrentPPO(
         model_config["policy"],
         env,
@@ -117,7 +130,24 @@ def _load_or_create_model(args: argparse.Namespace, env) -> PathIntegrationRecur
         return PathIntegrationRecurrentPPO.load(args.model_path, env=env, device=args.device)
     if args.mode == "probe":
         raise ValueError("--model-path is required in probe mode")
-    return _make_fresh_model(env, learning_rate=args.learning_rate, seed=args.seed, device=args.device)
+    return _make_fresh_model(
+        env,
+        learning_rate=args.learning_rate,
+        seed=args.seed,
+        device=args.device,
+        config_path=args.config_path,
+    )
+
+
+def _fresh_model_settings(args: argparse.Namespace) -> dict | None:
+    if args.mode != "train" or args.model_path is not None:
+        return None
+    return fresh_model_kwargs(
+        learning_rate=args.learning_rate,
+        seed=args.seed,
+        device=args.device,
+        config_path=args.config_path,
+    )
 
 
 def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
@@ -154,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
 
     output_dir = resolve_output_dir(args.output_dir, args.run_name, args.seed)
     run_name = resolved_run_name(output_dir, args.run_name)
-    fresh_settings = fresh_model_kwargs(learning_rate=args.learning_rate, seed=args.seed, device=args.device)
+    fresh_settings = _fresh_model_settings(args)
     env = _make_env()
     try:
         model = _load_or_create_model(args, env)

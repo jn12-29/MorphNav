@@ -53,11 +53,15 @@ def _effective_config(
     output_dir: Path,
     run_name: str,
     tensorboard_log_dir: Path | None,
-    fresh_model_settings: dict[str, Any],
+    fresh_model_settings: dict[str, Any] | None,
     dataset_info: dict[str, Any] | None,
     probe_dataset_info: dict[str, Any] | None,
 ) -> dict[str, Any]:
     cli_args = {key: _jsonable(value) for key, value in vars(args).items()}
+    config_path = getattr(args, "config_path", None)
+    fresh_model_config_path = (
+        str(config_path) if fresh_model_settings is not None and config_path is not None else None
+    )
     return {
         "created_at": utc_timestamp(),
         "mode": args.mode,
@@ -85,6 +89,7 @@ def _effective_config(
         "gridscore_top_k": args.gridscore_top_k,
         "checkpoint_every_epochs": args.checkpoint_every_epochs,
         "save_final_checkpoint": args.save_final_checkpoint,
+        "fresh_model_config_path": fresh_model_config_path,
         "fresh_model_settings": _jsonable(fresh_model_settings),
         "dataset_info": dataset_info,
         "probe_dataset_info": probe_dataset_info,
@@ -476,7 +481,7 @@ def run_offline_pi_workflow(
     *,
     output_dir: Path,
     run_name: str,
-    fresh_model_settings: dict[str, Any],
+    fresh_model_settings: dict[str, Any] | None,
 ) -> dict[str, float]:
     dirs = make_run_dirs(output_dir)
     logger = configure_train_logger(output_dir)

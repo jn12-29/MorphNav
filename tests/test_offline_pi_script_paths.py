@@ -52,3 +52,48 @@ def test_fresh_model_kwargs_loads_policy_settings_from_zoo_config():
     assert kwargs["policy_kwargs"]["pi_init_state_key"] == "start_pos"
     assert "n_envs" not in kwargs
     assert "n_timesteps" not in kwargs
+
+
+def test_fresh_model_settings_uses_cli_config_path():
+    parser = offline_pi_rehearsal_script.build_parser()
+    args = parser.parse_args(
+        [
+            "--dataset-root",
+            "data/datasets/pointmaze/phase1_pi/rehearsal_seed0",
+            "--config-path",
+            "custom/maze_pi.yml",
+        ]
+    )
+
+    with patch.object(offline_pi_rehearsal_script, "fresh_model_kwargs", return_value={"policy": "custom"}) as mocked:
+        settings = offline_pi_rehearsal_script._fresh_model_settings(args)
+
+    assert settings == {"policy": "custom"}
+    mocked.assert_called_once_with(
+        learning_rate=1e-4,
+        seed=0,
+        device="auto",
+        config_path=Path("custom/maze_pi.yml"),
+    )
+
+
+def test_fresh_model_settings_skips_loaded_model_config():
+    parser = offline_pi_rehearsal_script.build_parser()
+    args = parser.parse_args(
+        [
+            "--mode",
+            "probe",
+            "--dataset-root",
+            "data/datasets/pointmaze/phase1_pi/probe_seed1",
+            "--model-path",
+            "runs/offline_pi/example/models/final_model.zip",
+            "--config-path",
+            "missing/maze_pi.yml",
+        ]
+    )
+
+    with patch.object(offline_pi_rehearsal_script, "fresh_model_kwargs") as mocked:
+        settings = offline_pi_rehearsal_script._fresh_model_settings(args)
+
+    assert settings is None
+    mocked.assert_not_called()

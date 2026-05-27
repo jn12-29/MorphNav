@@ -15,8 +15,10 @@ This file lists MorphNav-specific traps that Claude Code tends to miss.
 - Phase 1 dataset and offline-PI contracts live near the implementation in `components/dataset_gen/`, `components/offline_pi_rehearsal.py`, and `components/pi_*.py`; inspect those modules before changing behavior.
 - Keep Phase 1 fresh-model settings in `rl-baselines3-zoo/conf/maze_pi.yml`; standalone offline PI scripts should load from that config instead of duplicating model kwargs.
 - PI initial-position awareness is part of the model contract: `start_pos` remains in observations and per-step features, and `pi_init_state_key='start_pos'` encodes it into actor/critic LSTM initial states.
+- Online `pi_ppo_lstm` eval writes PI visualization artifacts for all bottleneck units under the SB3 run's `pi_eval/step_<timesteps>/`; keep `components/pi_eval_visualization.py`, `components/pi_eval_callback.py`, `rl-baselines3-zoo/rl_zoo3/exp_manager.py`, README examples, and TensorBoard `eval/pi/*` scalar names aligned when changing it.
 - Standalone offline PI runs write a full run directory under `runs/offline_pi/`: keep `train.log`, `config.json`, `metrics/metrics.jsonl`, compatibility metrics, checkpoints, and probe artifacts aligned when changing that workflow.
 - Offline PI localization logs include full-sequence `localization_*` metrics plus first-step `first_localization_*` metrics; first-step means timestep 0 of each recurrent sequence, not a separate raw `start_pos` target.
+- `scripts/pi.sh` default offline rehearsal commands enable both `--eval-artifact-every-epochs 1` and `--eval-gridscore-every-epochs 1`; keep those examples aligned with README when changing offline probe visualization cadence.
 - Offline PI probe-time grid-score analysis is opt-in through `--eval-gridscore-every-epochs`; keep `components/offline_pi_gridscore.py`, `scripts/analyze_offline_pi_representations.py`, README examples, metrics JSONL, and TensorBoard scalar names aligned when changing it.
 - Keep `scripts/pi.sh` aligned with the standalone offline PI CLI and README examples.
 - Keep edits surgical and run the smallest relevant validation.

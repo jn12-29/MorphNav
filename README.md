@@ -67,10 +67,12 @@ python scripts/offline_pi_rehearsal.py \
   --probe-dataset-root data/datasets/pointmaze/phase1_pi/probe_seed1 \
   --epochs 1 \
   --eval-every-epochs 1 \
+  --eval-artifact-every-epochs 1 \
+  --eval-gridscore-every-epochs 1 \
   --checkpoint-every-epochs 1
 ```
 
-By default, the command creates a timestamped run under `runs/offline_pi/pointmaze_phase1_seed<seed>_<YYYYMMDD_HHMMSS>/`. Each run writes `train.log`, `config.json`, `metrics/metrics.jsonl`, `metrics/offline_pi_metrics.json`, probe summaries under `metrics/probe_epoch_XXXX.json`, checkpoints under `models/`, and optional probe diagnostics under `eval/`. Pass `--run-name` for a stable name or `--output-dir` for an explicit path. TensorBoard scalar logging is attempted by default under the run's `tensorboard/` directory; if TensorBoard dependencies are unavailable, training falls back to JSON and text logging. Use `--no-tensorboard` to skip TensorBoard explicitly. Set `--eval-artifact-every-epochs N` to write probe NPZ, JSON, and PNG localization diagnostics every `N` evaluated epochs.
+By default, the command creates a timestamped run under `runs/offline_pi/pointmaze_phase1_seed<seed>_<YYYYMMDD_HHMMSS>/`. Each run writes `train.log`, `config.json`, `metrics/metrics.jsonl`, `metrics/offline_pi_metrics.json`, probe summaries under `metrics/probe_epoch_XXXX.json`, checkpoints under `models/`, and optional probe diagnostics under `eval/`. Pass `--run-name` for a stable name or `--output-dir` for an explicit path. TensorBoard scalar logging is attempted by default under the run's `tensorboard/` directory; if TensorBoard dependencies are unavailable, training falls back to JSON and text logging. Use `--no-tensorboard` to skip TensorBoard explicitly. Set `--eval-every-epochs N` to control probe frequency, `--eval-artifact-every-epochs N` to write probe NPZ, JSON, and PNG localization diagnostics every `N` evaluated epochs, and `--eval-gridscore-every-epochs N` to write bottleneck ratemap/SAC/grid-score diagnostics every `N` evaluated epochs. `scripts/pi.sh` enables both artifact streams every evaluated epoch.
 
 Offline PI metrics include full-sequence `offline_pi/localization_*` and first-step `offline_pi/first_localization_*` fields, plus `first_localization_mse_ratio` and `first_localization_mae_ratio` against the matching full-sequence metric. The first-step target is timestep 0 of each recurrent sequence, not a separate raw `start_pos` target. Probe artifact summaries include the same first-step error summary, and `pred_vs_target_epoch_XXXX.npz` stores `first_step_mask`.
 
@@ -114,6 +116,8 @@ Standalone offline PI runs create fresh models from the same `rl-baselines3-zoo/
 ```bash
 python ./rl-baselines3-zoo/train.py --algo pi_ppo_lstm --env PointMaze -conf ./rl-baselines3-zoo/conf/maze_pi.yml --log-folder runs/sb3 --tensorboard-log runs/tensorboard/sb3
 ```
+
+When `pi_ppo_lstm` runs with `--eval-freq > 0`, each SB3 eval also exports PI diagnostics for up to four eval episodes under `<sb3-run>/pi_eval/step_<timesteps>/`. The directory contains decoded-vs-target trajectory plots, bottleneck rate maps, SAC/grid-score plots for all bottleneck units, `pi_eval_data.npz`, and `pi_eval_summary.json`; TensorBoard receives `eval/pi/*` localization and grid-score scalars.
 
 ## Visualize
 

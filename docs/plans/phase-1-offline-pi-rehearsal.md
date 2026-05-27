@@ -37,7 +37,7 @@ These names are separate from RL `train` and online RL `eval` terminology.
 - `obs/*` arrays are action-before policy observations used to choose the corresponding `step/action` row.
 - `obs/*` arrays align one-to-one with `step/action`, `step/reward`, and the episode offsets.
 - `achieved_goal` stays in the offline observation dict because it is the PI target.
-- `achieved_goal` must still be dropped from policy features through `CustomCombinedExtractor(drop_keys=['achieved_goal'])`.
+- `achieved_goal` must be dropped from per-step policy features through `CustomCombinedExtractor(drop_keys=['achieved_goal'])`; `start_pos` stays in observations and per-step policy features and seeds LSTM initial states through `pi_init_state_key='start_pos'`.
 - `offline_pi_rehearsal` uses the same model and policy objects as RL.
 - `offline_pi_rehearsal` owns a separate optimizer and does not reuse PPO optimizer state.
 - Phase 1 includes fixing the PPO optimizer parameter membership so online PI loss can update `path_integration_head`.
@@ -46,7 +46,7 @@ These names are separate from RL `train` and online RL `eval` terminology.
 
 Keep the Phase 1 PointMaze PI defaults in one implementation-level preset or helper, not duplicated across README, shell scripts, zoo YAML, and planning docs.
 
-The preset should cover the shared env kwargs needed for observation-space parity between dataset generation and the target `pi_ppo_lstm` RL run. `rl-baselines3-zoo/conf/maze_pi.yml` remains responsible for model and feature-extractor settings, including `features_extractor_kwargs=dict(drop_keys=['achieved_goal'])`. Standalone offline PI entry points should load fresh-model settings from this zoo config instead of duplicating them.
+The preset should cover the shared env kwargs needed for observation-space parity between dataset generation and the target `pi_ppo_lstm` RL run. `rl-baselines3-zoo/conf/maze_pi.yml` remains responsible for model and feature-extractor settings, including `features_extractor_kwargs=dict(drop_keys=['achieved_goal'])` and `pi_init_state_key='start_pos'`. Standalone offline PI entry points should load fresh-model settings from this zoo config instead of duplicating them.
 
 Docs should name the preset and describe the contract. Shell scripts remain experiment notes, not the source of truth for default environment settings.
 
@@ -197,8 +197,8 @@ Observation tensors should be flattened padded recurrent batches:
 First implementation strategy:
 
 - support full-episode batches or fixed windows;
-- initialize each sequence with zero LSTM state;
-- set the first real step of each sequence as `episode_starts = 1`;
+- provide zero stored LSTM states in the batch;
+- set the first real step of each sequence as `episode_starts = 1`, allowing the policy to replace zero state with the encoded `start_pos` initial state; when `max_seq_len` cuts an episode into windows, batch `start_pos` is the window first-step position;
 - use `mask` only for loss masking, not for skipping LSTM forward;
 - do not implement mid-episode burn-in in the first pass.
 
@@ -228,11 +228,11 @@ It should not compute actions, log probabilities, entropy, value loss, advantage
 
 ### Online PPO Optimizer Fix
 
-Ensure `path_integration_head` is included in the PPO optimizer used by online `PathIntegrationRecurrentPPO.train()`.
+Ensure `path_integration_head` and the PI initial-state projection layers are included in the PPO optimizer used by online `PathIntegrationRecurrentPPO.train()`.
 
 The fix should preserve the current online PI loss location and training semantics. It should only correct optimizer parameter membership.
 
-Add a preflight or test that fails when any trainable `path_integration_head` parameter is missing from `policy.optimizer`.
+Add a preflight or test that fails when any trainable PI head or initial-state projection parameter is missing from `policy.optimizer`.
 
 ### Offline Optimizer
 
@@ -242,6 +242,7 @@ Include only PI-path parameters:
 
 - actor feature extractor parameters used by the PI/action path;
 - `lstm_actor` parameters;
+- PI initial-state projection parameters.
 - `path_integration_head` parameters.
 
 Exclude PPO-only or value-path parameters:
@@ -337,9 +338,9 @@ Metrics should use a separate namespace, for example:
 
 - `forward_pi(...)` runs without actions or value outputs.
 - Changing only `achieved_goal` does not change PI logits when the feature extractor drops `achieved_goal`.
-- Online PPO optimizer includes `path_integration_head` parameters.
+- Online PPO optimizer includes `path_integration_head` and PI initial-state projection parameters.
 - Offline optimizer is not `policy.optimizer`.
-- Offline optimizer includes the actor feature extractor, `lstm_actor`, and `path_integration_head`.
+- Offline optimizer includes the actor feature extractor, `lstm_actor`, PI initial-state projection layers, and `path_integration_head`.
 - Offline optimizer excludes action and value heads.
 - Optimizer tests should verify parameter identity and parameter names so shared feature extractor cases are explicit.
 
@@ -359,5 +360,5 @@ Metrics should use a separate namespace, for example:
 - Online PPO updates can train `path_integration_head` through the existing online PI loss.
 - `offline_pi_rehearsal` performs PI-only updates with a separate optimizer.
 - `offline_pi_probe` reports PI metrics without changing parameters.
-- Existing online rollout PI behavior remains unchanged apart from the optimizer membership fix.
+- Existing online rollout PI behavior remains unchanged except for PI optimizer membership and `start_pos` LSTM-state initialization at episode starts.
 - Phase 1 remains limited to the PointMaze MuJoCo ball model.

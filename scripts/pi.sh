@@ -13,13 +13,13 @@ python scripts/generate_pointmaze_dataset.py \
   --dataset-seed 1
 
 
-# Offline Phase 1 PI rehearsal. TensorBoard is enabled by default and falls back to JSON/text logs if unavailable.
+# Offline Phase 1 PI rehearsal. maze_pi.yml encodes obs/start_pos into LSTM initial states.
 # Probe-time grid-score analysis is enabled with bounded cost for experiment monitoring.
-CUDA_VISIBLE_DEVICES=0 conda run -n mz python scripts/offline_pi_rehearsal.py \
+CUDA_VISIBLE_DEVICES=4 conda run -n mz python scripts/offline_pi_rehearsal.py \
   --mode train \
   --dataset-root data/datasets/pointmaze/phase1_pi/rehearsal_seed0 \
   --probe-dataset-root data/datasets/pointmaze/phase1_pi/probe_seed1 \
-  --epochs 10 \
+  --epochs 300 \
   --eval-every-epochs 1 \
   --eval-gridscore-every-epochs 1 \
-  --checkpoint-every-epochs 1
+  --checkpoint-every-epochs 5

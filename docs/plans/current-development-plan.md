@@ -19,9 +19,9 @@ Core commitments:
 - `offline_pi_rehearsal` performs PI-only updates on the current RL model with a separate optimizer.
 - `offline_pi_probe` evaluates held-out PI performance without parameter updates.
 - `obs/*` dataset arrays are action-before policy observations aligned with `step/action`.
-- `achieved_goal` remains in observations as the PI target and is dropped only from policy features.
-- `path_integration_head` must be included in the online PPO optimizer parameter set.
-- Existing online rollout PI behavior in `PathIntegrationRecurrentPPO.train()` is preserved apart from the optimizer membership fix.
+- `achieved_goal` remains in observations as the PI target; `achieved_goal` is dropped from per-step policy features, while `start_pos` stays in per-step policy features and seeds LSTM initial states through `pi_init_state_key='start_pos'`.
+- `path_integration_head` and PI initial-state projection layers must be included in the online PPO optimizer parameter set.
+- Existing online rollout PI behavior in `PathIntegrationRecurrentPPO.train()` is preserved except for PI optimizer membership and `start_pos` LSTM-state initialization at episode starts.
 - RL interleaving should be exposed through a lightweight SB3 callback or runner hook after the standalone APIs are in place.
 - Phase 1 remains limited to the PointMaze MuJoCo ball model.
 

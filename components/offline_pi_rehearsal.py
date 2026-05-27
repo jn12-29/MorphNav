@@ -134,6 +134,8 @@ def _load_sequences(dataset_root: str | Path, obs_keys: tuple[str, ...], target_
                 end = min(start + window, episode_end)
                 seq_obs = {key: value[start:end] for key, value in obs_arrays.items()}
                 target_pos = seq_obs[target_key][..., :2]
+                if "start_pos" in seq_obs and seq_obs["start_pos"].shape[-1] >= 2:
+                    seq_obs["start_pos"] = np.repeat(target_pos[:1], end - start, axis=0).astype(np.float32, copy=False)
                 sequences.append(_OfflinePISequence(obs=seq_obs, target_pos=target_pos, length=end - start))
 
     return sequences
@@ -317,6 +319,8 @@ def make_offline_pi_optimizer(
         [
             policy.pi_features_extractor,
             policy.lstm_actor,
+            policy.path_integration_state_init,
+            policy.path_integration_cell_init,
             policy.path_integration_head,
         ]
     )

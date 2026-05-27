@@ -106,7 +106,7 @@ python ./rl-baselines3-zoo/train.py --algo ppo_lstm --env PointMaze -conf ./rl-b
 
 `pi_ppo_lstm` adds a parallel place-cell prediction branch to PPO-LSTM. The action distribution path does not consume the PI bottleneck, but the auxiliary loss branches from actor LSTM states and trains the shared recurrent features.
 
-`achieved_goal` must remain in rollout observations as the PI target. Phase 1 PointMaze PI runs should use `sensor_aware=True` to match the dataset preset. `rl-baselines3-zoo/conf/maze_pi.yml` drops `achieved_goal` from policy features with `features_extractor_kwargs=dict(drop_keys=['achieved_goal'])`.
+`achieved_goal` must remain in rollout observations as the PI target. `start_pos` must also remain in observations and per-step policy features, and is encoded through the same fixed place-cell population to initialize actor/critic LSTM states at `episode_start`. Phase 1 PointMaze PI runs should use `sensor_aware=True` to match the dataset preset. `rl-baselines3-zoo/conf/maze_pi.yml` drops only `achieved_goal` from per-step policy features with `features_extractor_kwargs=dict(drop_keys=['achieved_goal'])`; `start_pos` also enters through `pi_init_state_key='start_pos'`.
 Standalone offline PI runs create fresh models from the same `rl-baselines3-zoo/conf/maze_pi.yml` model settings.
 
 ```bash

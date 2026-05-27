@@ -48,6 +48,7 @@ def _make_policy() -> PathIntegrationRecurrentActorCriticPolicy:
         pi_bottleneck_dim=4,
         pi_n_place_cells=8,
         pi_dropout_rate=0.0,
+        pi_init_state_key="start_pos",
     )
 
 
@@ -108,11 +109,14 @@ def _state_clone(policy: PathIntegrationRecurrentActorCriticPolicy) -> dict[str,
     return {key: value.detach().clone() for key, value in policy.state_dict().items()}
 
 
-def test_online_optimizer_contains_path_integration_head_parameters():
+def test_online_optimizer_contains_path_integration_parameters():
     policy = _make_policy()
     optimizer_param_ids = {id(param) for group in policy.optimizer.param_groups for param in group["params"]}
-    for param in policy.path_integration_head.parameters():
-        assert id(param) in optimizer_param_ids
+    for module in policy._path_integration_trainable_modules():
+        if module is None:
+            continue
+        for param in module.parameters():
+            assert id(param) in optimizer_param_ids
 
 
 def test_offline_loader_and_loss_run_on_padded_recurrent_batch(tmp_path: Path):
@@ -134,6 +138,7 @@ def test_offline_loader_and_loss_run_on_padded_recurrent_batch(tmp_path: Path):
     assert batch.target_pos.shape == (4, 2)
     assert batch.episode_starts.shape == (4,)
     assert batch.mask.tolist() == [True, True, True, False]
+    np.testing.assert_allclose(batch.obs["start_pos"][2].cpu().numpy(), batch.target_pos[2].cpu().numpy())
 
     loss, metrics = compute_offline_pi_loss(policy, batch)
     assert loss.ndim == 0
@@ -180,12 +185,37 @@ def test_changing_only_achieved_goal_does_not_change_pi_logits():
     th.testing.assert_close(original_outputs.pc_logits, altered_outputs.pc_logits)
 
 
+def test_start_pos_initializes_lstm_state_at_episode_start():
+    policy = _make_policy()
+    policy.set_training_mode(False)
+    init_positions = policy.path_integration_target_encoder.centers[:2].detach().cpu()
+    obs = {
+        "observation": th.zeros((2, 3), dtype=th.float32),
+        "start_pos": init_positions.to(dtype=th.float32),
+        "achieved_goal": th.zeros((2, 2), dtype=th.float32),
+        "desired_goal": th.ones((2, 2), dtype=th.float32),
+    }
+    states = (th.zeros((1, 2, 8), dtype=th.float32), th.zeros((1, 2, 8), dtype=th.float32))
+    episode_starts = th.ones((2,), dtype=th.float32)
+
+    with th.no_grad():
+        outputs, _ = policy.forward_pi(obs, states, episode_starts)
+
+    assert not th.allclose(outputs.pc_logits[0], outputs.pc_logits[1])
+
+
 def test_offline_optimizer_membership_excludes_action_and_value_heads():
     policy = _make_policy()
     optimizer = make_offline_pi_optimizer(policy, lr=1e-3)
     offline_param_ids = {id(param) for group in optimizer.param_groups for param in group["params"]}
 
-    for module in (policy.pi_features_extractor, policy.lstm_actor, policy.path_integration_head):
+    for module in (
+        policy.pi_features_extractor,
+        policy.lstm_actor,
+        policy.path_integration_state_init,
+        policy.path_integration_cell_init,
+        policy.path_integration_head,
+    ):
         for param in module.parameters():
             assert id(param) in offline_param_ids
     for module in (policy.action_net, policy.value_net, policy.lstm_critic, policy.mlp_extractor):
@@ -314,7 +344,11 @@ def test_rehearsal_updates_pi_path_but_not_action_or_value_heads(tmp_path: Path)
     assert any(
         not th.equal(policy.state_dict()[key], before[key])
         for key in before
-        if key.startswith("path_integration_head.")
+        if key.startswith((
+            "path_integration_head.",
+            "path_integration_state_init.",
+            "path_integration_cell_init.",
+        ))
     )
     for key, value in policy.state_dict().items():
         if key.startswith(("action_net.", "value_net.")):

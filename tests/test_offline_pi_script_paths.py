@@ -49,5 +49,6 @@ def test_fresh_model_kwargs_loads_policy_settings_from_zoo_config():
     assert kwargs["pi_target_key"] == "achieved_goal"
     assert kwargs["policy_kwargs"]["features_extractor_kwargs"] == {"drop_keys": ["achieved_goal"]}
     assert kwargs["policy_kwargs"]["lstm_hidden_size"] == 256
+    assert kwargs["policy_kwargs"]["pi_init_state_key"] == "start_pos"
     assert "n_envs" not in kwargs
     assert "n_timesteps" not in kwargs

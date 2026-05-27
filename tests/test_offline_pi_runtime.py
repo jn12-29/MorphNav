@@ -119,7 +119,15 @@ def test_workflow_config_records_tensorboard_dependency_fallback(tmp_path: Path)
         "offline_pi/probe/localization_mae": 4.0,
         "offline_pi/probe/x_mae": 5.0,
         "offline_pi/probe/y_mae": 6.0,
+        "offline_pi/probe/first_localization_mse": 0.5,
+        "offline_pi/probe/first_localization_rmse": 0.707,
+        "offline_pi/probe/first_localization_mae": 0.6,
+        "offline_pi/probe/first_x_mae": 0.7,
+        "offline_pi/probe/first_y_mae": 0.8,
+        "offline_pi/probe/first_localization_mse_ratio": 0.25,
+        "offline_pi/probe/first_localization_mae_ratio": 0.15,
         "offline_pi/probe/steps": 7.0,
+        "offline_pi/probe/first_step_count": 2.0,
     }
     real_import = __import__
 
@@ -152,7 +160,11 @@ def test_epoch_event_samples_seen_is_cumulative():
         "offline_pi/loss_std": 0.1,
         "offline_pi/localization_mse": 2.0,
         "offline_pi/localization_mse_std": 0.2,
+        "offline_pi/first_localization_mse": 0.5,
+        "offline_pi/first_localization_mse_std": 0.05,
+        "offline_pi/first_localization_mse_ratio": 0.25,
         "offline_pi/steps": 4.0,
+        "offline_pi/first_step_count": 2.0,
         "offline_pi/sequence_count": 2.0,
         "offline_pi/updates": 1.0,
         "offline_pi/epoch_seconds": 0.5,
@@ -162,6 +174,9 @@ def test_epoch_event_samples_seen_is_cumulative():
     event_metrics = _event_epoch_metrics(metrics, samples_seen=12)
 
     assert event_metrics["offline_pi/steps"] == 4.0
+    assert event_metrics["offline_pi/first_localization_mse_mean"] == 0.5
+    assert event_metrics["offline_pi/first_localization_mse_ratio"] == 0.25
+    assert event_metrics["offline_pi/first_step_count"] == 2.0
     assert event_metrics["offline_pi/samples_seen"] == 12.0
 
 
@@ -225,7 +240,15 @@ def test_workflow_probe_records_gridscore_metrics_and_summary(tmp_path: Path):
         "offline_pi/probe/localization_mae": 4.0,
         "offline_pi/probe/x_mae": 5.0,
         "offline_pi/probe/y_mae": 6.0,
+        "offline_pi/probe/first_localization_mse": 0.5,
+        "offline_pi/probe/first_localization_rmse": 0.707,
+        "offline_pi/probe/first_localization_mae": 0.6,
+        "offline_pi/probe/first_x_mae": 0.7,
+        "offline_pi/probe/first_y_mae": 0.8,
+        "offline_pi/probe/first_localization_mse_ratio": 0.25,
+        "offline_pi/probe/first_localization_mae_ratio": 0.15,
         "offline_pi/probe/steps": 7.0,
+        "offline_pi/probe/first_step_count": 2.0,
         "offline_pi/probe/sequence_count": 8.0,
     }
     gridscore_summary = {
@@ -257,6 +280,7 @@ def test_workflow_probe_records_gridscore_metrics_and_summary(tmp_path: Path):
     gridscore_mock.assert_called_once()
     assert gridscore_mock.call_args.kwargs["max_units"] is None
     probe_payload = json.loads((tmp_path / "run" / "metrics" / "probe_epoch_0000.json").read_text(encoding="utf-8"))
+    assert probe_payload["offline_pi/probe/first_localization_mse"] == 0.5
     assert probe_payload["offline_pi/probe/gridscore/best"] == 0.25
     assert probe_payload["offline_pi/probe/gridscore/best_unit"] == 3.0
     assert probe_payload["offline_pi/probe/gridscore/valid_units"] == 4.0

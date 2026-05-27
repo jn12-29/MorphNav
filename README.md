@@ -52,7 +52,7 @@ By default, the validation command writes `dataset_distribution.json`, `occupanc
 
 ## Offline PI Rehearsal
 
-Offline rehearsal trains only the PI path of `pi_ppo_lstm` using place-cell cross-entropy. MSE is reported only as a localization metric.
+Offline rehearsal trains only the PI path of `pi_ppo_lstm` using place-cell cross-entropy. Full-sequence and first-step MSE are reported only as localization metrics.
 
 Use the checked-in command note for the default Phase 1 rehearsal/probe datasets:
 
@@ -71,6 +71,8 @@ python scripts/offline_pi_rehearsal.py \
 ```
 
 By default, the command creates a timestamped run under `runs/offline_pi/pointmaze_phase1_seed<seed>_<YYYYMMDD_HHMMSS>/`. Each run writes `train.log`, `config.json`, `metrics/metrics.jsonl`, `metrics/offline_pi_metrics.json`, probe summaries under `metrics/probe_epoch_XXXX.json`, checkpoints under `models/`, and optional probe diagnostics under `eval/`. Pass `--run-name` for a stable name or `--output-dir` for an explicit path. TensorBoard scalar logging is attempted by default under the run's `tensorboard/` directory; if TensorBoard dependencies are unavailable, training falls back to JSON and text logging. Use `--no-tensorboard` to skip TensorBoard explicitly. Set `--eval-artifact-every-epochs N` to write probe NPZ, JSON, and PNG localization diagnostics every `N` evaluated epochs.
+
+Offline PI metrics include full-sequence `offline_pi/localization_*` and first-step `offline_pi/first_localization_*` fields, plus `first_localization_mse_ratio` and `first_localization_mae_ratio` against the matching full-sequence metric. The first-step target is timestep 0 of each recurrent sequence, not a separate raw `start_pos` target. Probe artifact summaries include the same first-step error summary, and `pred_vs_target_epoch_XXXX.npz` stores `first_step_mask`.
 
 Grid-score analysis during probe eval is opt-in. Set `--eval-gridscore-every-epochs N` to collect PI bottleneck activity on the probe dataset every `N` evaluated epochs and write `eval/gridscore_epoch_XXXX/gridscore_summary.json`, `gridscore_data.npz`, `top_grid_cells.png`, and `spatial_ratemaps_grid.png`. The probe JSON, `metrics.jsonl`, final metrics JSON, and TensorBoard include `offline_pi/probe/gridscore/*` summaries for epochs where the analysis ran. Use `--gridscore-max-steps` to bound training-time cost.
 

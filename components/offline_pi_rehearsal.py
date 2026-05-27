@@ -27,6 +27,13 @@ from components.path_integration import soft_place_cell_cross_entropy
 from components.pi_policy import PathIntegrationRecurrentActorCriticPolicy
 
 
+_METRIC_RATIO_EPS = 1e-12
+
+
+def _metric_ratio(numerator: float, denominator: float) -> float:
+    return float(numerator) / max(float(denominator), _METRIC_RATIO_EPS)
+
+
 @dataclass(frozen=True)
 class OfflinePIBatch:
     obs: dict[str, th.Tensor]
@@ -197,6 +204,15 @@ def _make_batch(
     )
 
 
+def first_step_mask_from_batch(batch: OfflinePIBatch) -> th.Tensor:
+    first_step_mask = th.zeros_like(batch.mask, dtype=th.bool)
+    if batch.sequence_count <= 0 or batch.max_len <= 0:
+        return first_step_mask
+    offsets = th.arange(batch.sequence_count, device=batch.mask.device) * int(batch.max_len)
+    first_step_mask[offsets] = batch.mask[offsets].bool()
+    return first_step_mask
+
+
 def load_offline_pi_batches(
     dataset_root: str | Path,
     *,
@@ -282,6 +298,12 @@ def compute_offline_pi_loss(
 
     with th.no_grad():
         decoded = decode_offline_pi_coordinates(policy, pi_outputs.pc_logits, batch.target_pos, batch.mask)
+        first_step_mask = first_step_mask_from_batch(batch)
+        first_step_metrics = _aggregate_coordinate_metrics(
+            decoded.pred_xy,
+            decoded.target_xy,
+            first_step_mask,
+        )
 
     return loss, {
         "loss": float(loss.detach().cpu().item()),
@@ -290,7 +312,21 @@ def compute_offline_pi_loss(
         "localization_mae": float(decoded.metrics["mae"]),
         "x_mae": float(decoded.metrics["x_mae"]),
         "y_mae": float(decoded.metrics["y_mae"]),
+        "first_localization_mse": float(first_step_metrics["mse"]),
+        "first_localization_rmse": float(first_step_metrics["rmse"]),
+        "first_localization_mae": float(first_step_metrics["mae"]),
+        "first_x_mae": float(first_step_metrics["x_mae"]),
+        "first_y_mae": float(first_step_metrics["y_mae"]),
+        "first_localization_mse_ratio": _metric_ratio(
+            first_step_metrics["mse"],
+            decoded.metrics["mse"],
+        ),
+        "first_localization_mae_ratio": _metric_ratio(
+            first_step_metrics["mae"],
+            decoded.metrics["mae"],
+        ),
         "masked_steps": float(batch.mask.sum().detach().cpu().item()),
+        "first_step_count": float(first_step_mask.sum().detach().cpu().item()),
         "sequence_count": float(batch.sequence_count),
     }
 
@@ -336,8 +372,26 @@ def _policy_lstm_shape(policy: PathIntegrationRecurrentActorCriticPolicy) -> tup
 
 def _mean_metrics(metric_rows: list[dict[str, float]], prefix: str) -> dict[str, float]:
     if not metric_rows:
-        return {f"{prefix}/loss": float("nan"), f"{prefix}/steps": 0.0, f"{prefix}/sequence_count": 0.0}
+        return {
+            f"{prefix}/loss": float("nan"),
+            f"{prefix}/localization_mse": float("nan"),
+            f"{prefix}/localization_rmse": float("nan"),
+            f"{prefix}/localization_mae": float("nan"),
+            f"{prefix}/x_mae": float("nan"),
+            f"{prefix}/y_mae": float("nan"),
+            f"{prefix}/first_localization_mse": float("nan"),
+            f"{prefix}/first_localization_rmse": float("nan"),
+            f"{prefix}/first_localization_mae": float("nan"),
+            f"{prefix}/first_x_mae": float("nan"),
+            f"{prefix}/first_y_mae": float("nan"),
+            f"{prefix}/first_localization_mse_ratio": float("nan"),
+            f"{prefix}/first_localization_mae_ratio": float("nan"),
+            f"{prefix}/steps": 0.0,
+            f"{prefix}/first_step_count": 0.0,
+            f"{prefix}/sequence_count": 0.0,
+        }
     weighted_steps = sum(row["masked_steps"] for row in metric_rows)
+    weighted_first_steps = sum(row["first_step_count"] for row in metric_rows)
     if weighted_steps > 0:
         loss = sum(row["loss"] * row["masked_steps"] for row in metric_rows) / weighted_steps
         localization_mse = sum(row["localization_mse"] * row["masked_steps"] for row in metric_rows) / weighted_steps
@@ -350,7 +404,26 @@ def _mean_metrics(metric_rows: list[dict[str, float]], prefix: str) -> dict[str,
         localization_mae = float(np.mean([row["localization_mae"] for row in metric_rows]))
         x_mae = float(np.mean([row["x_mae"] for row in metric_rows]))
         y_mae = float(np.mean([row["y_mae"] for row in metric_rows]))
+    if weighted_first_steps > 0:
+        first_localization_mse = sum(
+            row["first_localization_mse"] * row["first_step_count"] for row in metric_rows
+        ) / weighted_first_steps
+        first_localization_mae = sum(
+            row["first_localization_mae"] * row["first_step_count"] for row in metric_rows
+        ) / weighted_first_steps
+        first_x_mae = sum(
+            row["first_x_mae"] * row["first_step_count"] for row in metric_rows
+        ) / weighted_first_steps
+        first_y_mae = sum(
+            row["first_y_mae"] * row["first_step_count"] for row in metric_rows
+        ) / weighted_first_steps
+    else:
+        first_localization_mse = float(np.mean([row["first_localization_mse"] for row in metric_rows]))
+        first_localization_mae = float(np.mean([row["first_localization_mae"] for row in metric_rows]))
+        first_x_mae = float(np.mean([row["first_x_mae"] for row in metric_rows]))
+        first_y_mae = float(np.mean([row["first_y_mae"] for row in metric_rows]))
     localization_rmse = float(np.sqrt(localization_mse))
+    first_localization_rmse = float(np.sqrt(first_localization_mse))
     return {
         f"{prefix}/loss": float(loss),
         f"{prefix}/localization_mse": float(localization_mse),
@@ -358,7 +431,21 @@ def _mean_metrics(metric_rows: list[dict[str, float]], prefix: str) -> dict[str,
         f"{prefix}/localization_mae": float(localization_mae),
         f"{prefix}/x_mae": float(x_mae),
         f"{prefix}/y_mae": float(y_mae),
+        f"{prefix}/first_localization_mse": float(first_localization_mse),
+        f"{prefix}/first_localization_rmse": float(first_localization_rmse),
+        f"{prefix}/first_localization_mae": float(first_localization_mae),
+        f"{prefix}/first_x_mae": float(first_x_mae),
+        f"{prefix}/first_y_mae": float(first_y_mae),
+        f"{prefix}/first_localization_mse_ratio": _metric_ratio(
+            first_localization_mse,
+            localization_mse,
+        ),
+        f"{prefix}/first_localization_mae_ratio": _metric_ratio(
+            first_localization_mae,
+            localization_mae,
+        ),
         f"{prefix}/steps": float(weighted_steps),
+        f"{prefix}/first_step_count": float(weighted_first_steps),
         f"{prefix}/sequence_count": float(sum(row["sequence_count"] for row in metric_rows)),
     }
 
@@ -446,9 +533,13 @@ def run_offline_pi_rehearsal(
             latest_epoch_metrics["offline_pi/localization_mse_std"] = float(
                 np.std([row["localization_mse"] for row in epoch_rows])
             )
+            latest_epoch_metrics["offline_pi/first_localization_mse_std"] = float(
+                np.std([row["first_localization_mse"] for row in epoch_rows])
+            )
         else:
             latest_epoch_metrics["offline_pi/loss_std"] = float("nan")
             latest_epoch_metrics["offline_pi/localization_mse_std"] = float("nan")
+            latest_epoch_metrics["offline_pi/first_localization_mse_std"] = float("nan")
         if on_epoch_end is not None:
             on_epoch_end(
                 {

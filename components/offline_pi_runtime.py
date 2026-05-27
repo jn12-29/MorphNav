@@ -156,12 +156,24 @@ class TensorBoardRunWriter:
 def tensorboard_log_update(writer: TensorBoardRunWriter, metrics: dict[str, float], *, lr: float, step: int) -> None:
     writer.add_scalar("train/loss_step", float(metrics["loss"]), step)
     writer.add_scalar("train/localization_mse_step", float(metrics["localization_mse"]), step)
+    writer.add_scalar("train/first_localization_mse_step", float(metrics["first_localization_mse"]), step)
+    writer.add_scalar(
+        "train/first_localization_mse_ratio_step",
+        float(metrics["first_localization_mse_ratio"]),
+        step,
+    )
     writer.add_scalar("train/lr", float(lr), step)
 
 
 def tensorboard_log_epoch(writer: TensorBoardRunWriter, metrics: dict[str, float], *, step: int) -> None:
     writer.add_scalar("train/loss_epoch", float(metrics["offline_pi/loss"]), step)
     writer.add_scalar("train/localization_mse_epoch", float(metrics["offline_pi/localization_mse"]), step)
+    writer.add_scalar("train/first_localization_mse_epoch", float(metrics["offline_pi/first_localization_mse"]), step)
+    writer.add_scalar(
+        "train/first_localization_mse_ratio",
+        float(metrics["offline_pi/first_localization_mse_ratio"]),
+        step,
+    )
     writer.add_scalar("train/epoch_seconds", float(metrics["offline_pi/epoch_seconds"]), step)
 
 
@@ -173,6 +185,13 @@ def tensorboard_log_probe(writer: TensorBoardRunWriter, metrics: dict[str, float
         "probe/localization_mae": "offline_pi/probe/localization_mae",
         "probe/x_mae": "offline_pi/probe/x_mae",
         "probe/y_mae": "offline_pi/probe/y_mae",
+        "probe/first_localization_mse": "offline_pi/probe/first_localization_mse",
+        "probe/first_localization_rmse": "offline_pi/probe/first_localization_rmse",
+        "probe/first_localization_mae": "offline_pi/probe/first_localization_mae",
+        "probe/first_x_mae": "offline_pi/probe/first_x_mae",
+        "probe/first_y_mae": "offline_pi/probe/first_y_mae",
+        "probe/first_localization_mse_ratio": "offline_pi/probe/first_localization_mse_ratio",
+        "probe/first_localization_mae_ratio": "offline_pi/probe/first_localization_mae_ratio",
         "probe/gridscore/best": "offline_pi/probe/gridscore/best",
         "probe/gridscore/mean": "offline_pi/probe/gridscore/mean",
         "probe/gridscore/valid_units": "offline_pi/probe/gridscore/valid_units",

@@ -112,7 +112,10 @@ def _prefix_update_metrics(metrics: dict[str, float], *, lr: float) -> dict[str,
     return {
         "offline_pi/loss_step": float(metrics["loss"]),
         "offline_pi/localization_mse_step": float(metrics["localization_mse"]),
+        "offline_pi/first_localization_mse_step": float(metrics["first_localization_mse"]),
+        "offline_pi/first_localization_mse_ratio_step": float(metrics["first_localization_mse_ratio"]),
         "offline_pi/masked_steps": float(metrics["masked_steps"]),
+        "offline_pi/first_step_count": float(metrics["first_step_count"]),
         "offline_pi/sequence_count": float(metrics["sequence_count"]),
         "offline_pi/lr": float(lr),
     }
@@ -124,7 +127,11 @@ def _event_epoch_metrics(metrics: dict[str, float], *, samples_seen: int) -> dic
         "offline_pi/loss_std": float(metrics["offline_pi/loss_std"]),
         "offline_pi/localization_mse_mean": float(metrics["offline_pi/localization_mse"]),
         "offline_pi/localization_mse_std": float(metrics["offline_pi/localization_mse_std"]),
+        "offline_pi/first_localization_mse_mean": float(metrics["offline_pi/first_localization_mse"]),
+        "offline_pi/first_localization_mse_std": float(metrics["offline_pi/first_localization_mse_std"]),
+        "offline_pi/first_localization_mse_ratio": float(metrics["offline_pi/first_localization_mse_ratio"]),
         "offline_pi/steps": float(metrics["offline_pi/steps"]),
+        "offline_pi/first_step_count": float(metrics["offline_pi/first_step_count"]),
         "offline_pi/sequence_count": float(metrics["offline_pi/sequence_count"]),
         "offline_pi/updates": float(metrics["offline_pi/updates"]),
         "offline_pi/epoch_seconds": float(metrics["offline_pi/epoch_seconds"]),
@@ -213,10 +220,12 @@ def _run_probe(
     )
     tensorboard_log_probe(tensorboard_writer, metrics, step=global_step)
     logger.info(
-        "probe complete epoch=%04d loss=%.6f localization_mse=%.6f rmse=%.6f",
+        "probe complete epoch=%04d loss=%.6f localization_mse=%.6f first_localization_mse=%.6f first_ratio=%.4f rmse=%.6f",
         epoch,
         metrics["offline_pi/probe/loss"],
         metrics["offline_pi/probe/localization_mse"],
+        metrics["offline_pi/probe/first_localization_mse"],
+        metrics["offline_pi/probe/first_localization_mse_ratio"],
         metrics["offline_pi/probe/localization_rmse"],
     )
     if gridscore_summary is not None:
@@ -331,11 +340,12 @@ def _run_train(
                 step=update_state["global_step"],
             )
             logger.info(
-                "update progress epoch=%04d update=%d loss=%.6f localization_mse=%.6f masked_steps=%d",
+                "update progress epoch=%04d update=%d loss=%.6f localization_mse=%.6f first_localization_mse=%.6f masked_steps=%d",
                 payload["epoch"],
                 payload["update"],
                 payload["metrics"]["loss"],
                 payload["metrics"]["localization_mse"],
+                payload["metrics"]["first_localization_mse"],
                 int(payload["metrics"]["masked_steps"]),
             )
 
@@ -355,11 +365,13 @@ def _run_train(
         )
         tensorboard_log_epoch(tensorboard_writer, payload["metrics"], step=update_state["global_step"])
         logger.info(
-            "epoch complete epoch=%04d updates=%d loss=%.6f localization_mse=%.6f seconds=%.2f",
+            "epoch complete epoch=%04d updates=%d loss=%.6f localization_mse=%.6f first_localization_mse=%.6f first_ratio=%.4f seconds=%.2f",
             payload["epoch"],
             int(payload["metrics"]["offline_pi/updates"]),
             payload["metrics"]["offline_pi/loss"],
             payload["metrics"]["offline_pi/localization_mse"],
+            payload["metrics"]["offline_pi/first_localization_mse"],
+            payload["metrics"]["offline_pi/first_localization_mse_ratio"],
             payload["metrics"]["offline_pi/epoch_seconds"],
         )
         if args.probe_dataset_root is not None and args.eval_every_epochs > 0 and payload["epoch"] % args.eval_every_epochs == 0:

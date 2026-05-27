@@ -16,6 +16,7 @@ This file lists MorphNav-specific traps that Claude Code tends to miss.
 - Keep Phase 1 fresh-model settings in `rl-baselines3-zoo/conf/maze_pi.yml`; standalone offline PI scripts should load from that config instead of duplicating model kwargs.
 - PI initial-position awareness is part of the model contract: `start_pos` remains in observations and per-step features, and `pi_init_state_key='start_pos'` encodes it into actor/critic LSTM initial states.
 - Standalone offline PI runs write a full run directory under `runs/offline_pi/`: keep `train.log`, `config.json`, `metrics/metrics.jsonl`, compatibility metrics, checkpoints, and probe artifacts aligned when changing that workflow.
+- Offline PI localization logs include full-sequence `localization_*` metrics plus first-step `first_localization_*` metrics; first-step means timestep 0 of each recurrent sequence, not a separate raw `start_pos` target.
 - Offline PI probe-time grid-score analysis is opt-in through `--eval-gridscore-every-epochs`; keep `components/offline_pi_gridscore.py`, `scripts/analyze_offline_pi_representations.py`, README examples, metrics JSONL, and TensorBoard scalar names aligned when changing it.
 - Keep `scripts/pi.sh` aligned with the standalone offline PI CLI and README examples.
 - Keep edits surgical and run the smallest relevant validation.

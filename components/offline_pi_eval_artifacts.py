@@ -15,7 +15,11 @@ import numpy as np
 import torch as th
 
 from components.dataset_gen.pointmaze_config import POINTMAZE_POLICY_OBS_KEYS
-from components.offline_pi_rehearsal import decode_offline_pi_coordinates, load_offline_pi_batches
+from components.offline_pi_rehearsal import (
+    decode_offline_pi_coordinates,
+    first_step_mask_from_batch,
+    load_offline_pi_batches,
+)
 from components.pi_policy import PathIntegrationRecurrentActorCriticPolicy
 
 
@@ -53,6 +57,7 @@ def collect_probe_predictions(
     pred_parts = []
     target_parts = []
     mask_parts = []
+    first_step_mask_parts = []
     with th.no_grad():
         for batch in load_offline_pi_batches(
             dataset_root,
@@ -71,6 +76,9 @@ def collect_probe_predictions(
             pred_parts.append(decoded.pred_xy.detach().cpu().numpy())
             target_parts.append(decoded.target_xy.detach().cpu().numpy())
             mask_parts.append(mask)
+            first_step_mask_parts.append(
+                first_step_mask_from_batch(batch).detach().cpu().numpy().astype(bool)
+            )
             if max_steps is not None and sum(part.shape[0] for part in pred_parts) >= max_steps:
                 break
 
@@ -79,18 +87,25 @@ def collect_probe_predictions(
     pred_xy = np.concatenate(pred_parts, axis=0)
     target_xy = np.concatenate(target_parts, axis=0)
     mask = np.concatenate(mask_parts, axis=0)
+    first_step_mask = np.concatenate(first_step_mask_parts, axis=0)
     if max_steps is not None:
         pred_xy = pred_xy[:max_steps]
         target_xy = target_xy[:max_steps]
         mask = mask[:max_steps]
+        first_step_mask = first_step_mask[:max_steps]
     diff = pred_xy - target_xy
     return {
         "pred_xy": pred_xy.astype(np.float32),
         "target_xy": target_xy.astype(np.float32),
         "mask": mask.astype(bool),
+        "first_step_mask": first_step_mask.astype(bool),
         "squared_error": diff.astype(np.float32) ** 2,
         "absolute_error": np.abs(diff).astype(np.float32),
     }
+
+
+def _metric_ratio(numerator: float, denominator: float) -> float:
+    return float(numerator) / max(float(denominator), 1e-12)
 
 
 def _error_summary(pred_xy: np.ndarray, target_xy: np.ndarray, bounds: np.ndarray) -> dict[str, Any]:
@@ -194,14 +209,22 @@ def export_probe_artifacts(
     )
     valid_pred_xy = arrays["pred_xy"][arrays["mask"]]
     valid_target_xy = arrays["target_xy"][arrays["mask"]]
+    first_step_mask = arrays["mask"] & arrays["first_step_mask"]
+    first_pred_xy = arrays["pred_xy"][first_step_mask]
+    first_target_xy = arrays["target_xy"][first_step_mask]
     resolved_bounds = _resolve_bounds(valid_target_xy, bounds)
     summary = _error_summary(valid_pred_xy, valid_target_xy, resolved_bounds)
+    first_summary = _error_summary(first_pred_xy, first_target_xy, resolved_bounds)
+    first_summary["mse_ratio"] = _metric_ratio(first_summary["mse"], summary["mse"])
+    first_summary["mae_ratio"] = _metric_ratio(first_summary["mae"], summary["mae"])
+    summary["first_step"] = first_summary
 
     np.savez_compressed(
         output_dir / f"pred_vs_target_{suffix}.npz",
         pred_xy=arrays["pred_xy"],
         target_xy=arrays["target_xy"],
         mask=arrays["mask"],
+        first_step_mask=arrays["first_step_mask"],
         squared_error=arrays["squared_error"],
         absolute_error=arrays["absolute_error"],
         bounds=resolved_bounds,

@@ -18,6 +18,7 @@ from components.offline_pi_rehearsal import (
     count_offline_pi_sequences,
     compute_offline_pi_loss,
     decode_offline_pi_coordinates,
+    first_step_mask_from_batch,
     load_offline_pi_batches,
     make_offline_pi_optimizer,
     run_offline_pi_probe,
@@ -138,16 +139,25 @@ def test_offline_loader_and_loss_run_on_padded_recurrent_batch(tmp_path: Path):
     assert batch.target_pos.shape == (4, 2)
     assert batch.episode_starts.shape == (4,)
     assert batch.mask.tolist() == [True, True, True, False]
+    assert first_step_mask_from_batch(batch).tolist() == [True, False, True, False]
     np.testing.assert_allclose(batch.obs["start_pos"][2].cpu().numpy(), batch.target_pos[2].cpu().numpy())
 
     loss, metrics = compute_offline_pi_loss(policy, batch)
     assert loss.ndim == 0
     assert metrics["masked_steps"] == 3.0
+    assert metrics["first_step_count"] == 2.0
     assert metrics["localization_mse"] >= 0.0
     assert metrics["localization_rmse"] >= 0.0
     assert metrics["localization_mae"] >= 0.0
     assert metrics["x_mae"] >= 0.0
     assert metrics["y_mae"] >= 0.0
+    assert metrics["first_localization_mse"] >= 0.0
+    assert metrics["first_localization_rmse"] >= 0.0
+    assert metrics["first_localization_mae"] >= 0.0
+    assert metrics["first_x_mae"] >= 0.0
+    assert metrics["first_y_mae"] >= 0.0
+    assert metrics["first_localization_mse_ratio"] >= 0.0
+    assert metrics["first_localization_mae_ratio"] >= 0.0
 
     outputs, _ = policy.forward_pi(batch.obs, batch.lstm_states_pi, batch.episode_starts)
     decoded = decode_offline_pi_coordinates(policy, outputs.pc_logits, batch.target_pos, batch.mask)
@@ -238,6 +248,11 @@ def test_probe_leaves_state_dict_unchanged(tmp_path: Path):
     assert metrics["offline_pi/probe/localization_mae"] >= 0.0
     assert metrics["offline_pi/probe/x_mae"] >= 0.0
     assert metrics["offline_pi/probe/y_mae"] >= 0.0
+    assert metrics["offline_pi/probe/first_step_count"] == 3.0
+    assert metrics["offline_pi/probe/first_localization_mse"] >= 0.0
+    assert metrics["offline_pi/probe/first_localization_rmse"] >= 0.0
+    assert metrics["offline_pi/probe/first_localization_mae"] >= 0.0
+    assert metrics["offline_pi/probe/first_localization_mse_ratio"] >= 0.0
     for key, value in policy.state_dict().items():
         th.testing.assert_close(value, before[key])
 
@@ -258,9 +273,13 @@ def test_export_probe_artifacts_writes_masked_coordinate_diagnostics(tmp_path: P
     )
 
     assert summary["num_steps"] == 5
+    assert summary["first_step"]["num_steps"] == 3
+    assert summary["first_step"]["mse"] >= 0.0
+    assert summary["first_step"]["mse_ratio"] >= 0.0
     with np.load(output_dir / "pred_vs_target_epoch_0000.npz") as data:
         assert data["pred_xy"].shape == data["target_xy"].shape
         assert data["mask"].tolist() == [True, True, True, False, True, True]
+        assert data["first_step_mask"].tolist() == [True, False, True, False, True, False]
         assert data["squared_error"].shape == data["pred_xy"].shape
         assert data["absolute_error"].shape == data["pred_xy"].shape
         assert data["bounds"].shape == (4,)
@@ -341,6 +360,9 @@ def test_rehearsal_updates_pi_path_but_not_action_or_value_heads(tmp_path: Path)
 
     assert metrics["offline_pi/updates"] == 1.0
     assert metrics["offline_pi/final_epoch"] == 1.0
+    assert metrics["offline_pi/first_step_count"] > 0.0
+    assert metrics["offline_pi/first_localization_mse"] >= 0.0
+    assert metrics["offline_pi/first_localization_mse_ratio"] >= 0.0
     assert any(
         not th.equal(policy.state_dict()[key], before[key])
         for key in before

@@ -52,7 +52,7 @@ By default, the validation command writes `dataset_distribution.json`, `occupanc
 
 ## Offline PI Rehearsal
 
-Offline rehearsal trains only the PI path of `pi_ppo_lstm` using place-cell cross-entropy. Full-sequence and first-step MSE are reported only as localization metrics.
+Offline rehearsal trains only the PI path of `pi_ppo_lstm` using weighted place-cell cross-entropy. The first timestep of each recurrent sequence uses `--first-step-loss-weight` and defaults to `10.0`. Full-sequence and first-step MSE are reported only as localization metrics.
 
 Use the checked-in command note for the default Phase 1 rehearsal/probe datasets:
 
@@ -66,13 +66,14 @@ python scripts/offline_pi_rehearsal.py \
   --dataset-root data/datasets/pointmaze/phase1_pi/rehearsal_seed0 \
   --probe-dataset-root data/datasets/pointmaze/phase1_pi/probe_seed1 \
   --epochs 1 \
+  --first-step-loss-weight 10.0 \
   --eval-every-epochs 1 \
   --eval-artifact-every-epochs 1 \
   --eval-gridscore-every-epochs 1 \
   --checkpoint-every-epochs 1
 ```
 
-By default, the command creates a timestamped run under `runs/offline_pi/pointmaze_phase1_seed<seed>_<YYYYMMDD_HHMMSS>/`. Each run writes `train.log`, `config.json`, `metrics/metrics.jsonl`, `metrics/offline_pi_metrics.json`, probe summaries under `metrics/probe_epoch_XXXX.json`, checkpoints under `models/`, and optional probe diagnostics under `eval/`. Pass `--run-name` for a stable name or `--output-dir` for an explicit path. TensorBoard scalar logging is attempted by default under the run's `tensorboard/` directory; if TensorBoard dependencies are unavailable, training falls back to JSON and text logging. Use `--no-tensorboard` to skip TensorBoard explicitly. Set `--eval-every-epochs N` to control probe frequency, `--eval-artifact-every-epochs N` to write probe NPZ, JSON, and PNG localization diagnostics every `N` evaluated epochs, and `--eval-gridscore-every-epochs N` to write bottleneck ratemap/SAC/grid-score diagnostics every `N` evaluated epochs. `scripts/pi.sh` enables both artifact streams every evaluated epoch.
+By default, the command creates a timestamped run under `runs/offline_pi/pointmaze_phase1_seed<seed>_<YYYYMMDD_HHMMSS>/`. Each run writes `train.log`, `config.json`, `metrics/metrics.jsonl`, `metrics/offline_pi_metrics.json`, probe summaries under `metrics/probe_epoch_XXXX.json`, checkpoints under `models/`, and optional probe diagnostics under `eval/`. Pass `--run-name` for a stable name or `--output-dir` for an explicit path. TensorBoard scalar logging is attempted by default under the run's `tensorboard/` directory; if TensorBoard dependencies are unavailable, training falls back to JSON and text logging. Use `--no-tensorboard` to skip TensorBoard explicitly. Set `--first-step-loss-weight W` to weight timestep 0 of each recurrent sequence in the PI loss, `--eval-every-epochs N` to control probe frequency, `--eval-artifact-every-epochs N` to write probe NPZ, JSON, and PNG localization diagnostics every `N` evaluated epochs, and `--eval-gridscore-every-epochs N` to write bottleneck ratemap/SAC/grid-score diagnostics every `N` evaluated epochs. `scripts/pi.sh` enables both artifact streams every evaluated epoch.
 
 Fresh offline PI models are created from `rl-baselines3-zoo/conf/maze_pi.yml` by default. Pass `--config-path <path>` to use another zoo-style config for fresh model creation. This does not rewrite or reshape a checkpoint loaded with `--model-path`; loaded models keep the architecture stored in the checkpoint.
 
@@ -110,7 +111,7 @@ python ./rl-baselines3-zoo/train.py --algo ppo_lstm --env PointMaze -conf ./rl-b
 
 ### Path integration auxiliary training
 
-`pi_ppo_lstm` adds a parallel place-cell prediction branch to PPO-LSTM. The action distribution path does not consume the PI bottleneck, but the auxiliary loss branches from actor LSTM states and trains the shared recurrent features.
+`pi_ppo_lstm` adds a parallel place-cell prediction branch to PPO-LSTM. The action distribution path does not consume the PI bottleneck, but the weighted auxiliary loss branches from actor LSTM states and trains the shared recurrent features. The default `pi_first_step_loss_weight` is `10.0` and applies to timestep 0 of each recurrent sequence.
 
 `achieved_goal` must remain in rollout observations as the PI target. `start_pos` must also remain in observations and is encoded through the same fixed place-cell population to initialize actor/critic LSTM states at `episode_start`. Phase 1 PointMaze PI runs should use `sensor_aware=True` to match the dataset preset. The default `rl-baselines3-zoo/conf/maze_pi.yml` drops only `achieved_goal` from per-step policy features with `features_extractor_kwargs=dict(drop_keys=['achieved_goal'])`, so `start_pos` also enters as a per-step feature by default. A custom config may add `start_pos` to `drop_keys` while keeping `pi_init_state_key='start_pos'` to inject `start_pos` only through LSTM initial states.
 Standalone offline PI runs create fresh models from the same `rl-baselines3-zoo/conf/maze_pi.yml` model settings unless `--config-path` points to another config.

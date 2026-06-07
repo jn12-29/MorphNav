@@ -38,6 +38,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-path", type=Path, default=None)
     parser.add_argument("--config-path", type=Path, default=PI_ZOO_CONFIG_PATH)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
+    parser.add_argument("--first-step-loss-weight", type=float, default=10.0)
     parser.add_argument("--batch-size-sequences", type=int, default=16)
     parser.add_argument("--max-seq-len", type=int, default=1000)
     parser.add_argument("--max-updates", type=int, default=None)
@@ -153,6 +154,8 @@ def _fresh_model_settings(args: argparse.Namespace) -> dict | None:
 def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     if args.batch_size_sequences <= 0:
         parser.error("--batch-size-sequences must be > 0")
+    if args.first_step_loss_weight <= 0.0:
+        parser.error("--first-step-loss-weight must be > 0")
     if args.max_seq_len is not None and args.max_seq_len <= 0:
         parser.error("--max-seq-len must be > 0")
     if args.epochs <= 0:

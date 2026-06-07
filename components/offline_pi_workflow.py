@@ -47,6 +47,10 @@ def _resolved_tensorboard_log_dir(args: Any, dirs: dict[str, Path]) -> Path | No
     return None
 
 
+def _first_step_loss_weight(args: Any) -> float:
+    return float(getattr(args, "first_step_loss_weight", 10.0))
+
+
 def _effective_config(
     args: Any,
     *,
@@ -71,6 +75,7 @@ def _effective_config(
         "dataset_root": str(args.dataset_root),
         "probe_dataset_root": str(args.probe_dataset_root) if args.probe_dataset_root is not None else None,
         "learning_rate": args.learning_rate,
+        "first_step_loss_weight": _first_step_loss_weight(args),
         "batch_size_sequences": args.batch_size_sequences,
         "max_seq_len": args.max_seq_len,
         "max_updates": args.max_updates,
@@ -178,6 +183,7 @@ def _run_probe(
         dataset_root,
         batch_size_sequences=args.batch_size_sequences,
         max_seq_len=args.max_seq_len,
+        first_step_loss_weight=_first_step_loss_weight(args),
     )
     metrics["offline_pi/probe/seconds"] = float(time.time() - started)
     artifact_summary = None
@@ -422,6 +428,7 @@ def _run_train(
         max_updates=args.max_updates,
         n_epochs=args.epochs,
         seed=args.seed,
+        first_step_loss_weight=_first_step_loss_weight(args),
         on_epoch_start=on_epoch_start,
         on_update=on_update,
         on_epoch_end=on_epoch_end,

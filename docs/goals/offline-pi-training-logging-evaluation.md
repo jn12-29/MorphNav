@@ -418,7 +418,7 @@ Avoid broad refactors of online PPO training code.
 When implementation lands, update:
 
 - `README.md`
-- `CLAUDE.md` if any project trap or command expectation changes
+- `AGENTS.md` if any project trap or command expectation changes
 - relevant `scripts/*.sh` experiment notes if they invoke offline PI training
 
 Documentation should present the final workflow and current commands only. It should not preserve old command variants as migration notes unless explicitly requested.

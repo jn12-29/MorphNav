@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 
 import numpy as np
 import torch as th
 
+from components.pi_eval_callback import OnlinePIEvalVisualizationCallback
 from components.pi_eval_visualization import export_online_pi_eval_visualization
 
 
@@ -101,3 +103,15 @@ def test_export_online_pi_eval_visualization_writes_eval_artifacts(tmp_path):
     payload = json.loads((tmp_path / "pi_eval_summary.json").read_text(encoding="utf-8"))
     assert payload["target_key"] == "achieved_goal"
     assert payload["gridscore"]["unit_count"] == 3
+
+
+def test_online_pi_eval_callback_defaults_to_model_pi_target_key(tmp_path):
+    callback = OnlinePIEvalVisualizationCallback(tmp_path)
+    callback.model = SimpleNamespace(pi_target_key="custom_goal")
+
+    assert callback._resolved_target_key() == "custom_goal"
+
+    explicit = OnlinePIEvalVisualizationCallback(tmp_path, target_key="explicit_goal")
+    explicit.model = SimpleNamespace(pi_target_key="custom_goal")
+
+    assert explicit._resolved_target_key() == "explicit_goal"

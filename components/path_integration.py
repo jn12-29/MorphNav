@@ -98,17 +98,63 @@ class PathIntegrationHead(nn.Module):
         return PathIntegrationOutputs(pc_logits=pc_logits, bottleneck=bottleneck)
 
 
-def soft_place_cell_cross_entropy(pc_logits: th.Tensor, pc_targets: th.Tensor, mask: th.Tensor | None = None) -> th.Tensor:
+def recurrent_first_step_loss_weights(
+    mask: th.Tensor,
+    *,
+    sequence_count: int,
+    first_step_weight: float,
+) -> th.Tensor:
+    if first_step_weight <= 0.0:
+        raise ValueError("first_step_weight must be positive")
+    if sequence_count <= 0:
+        raise ValueError("sequence_count must be positive")
+    if mask.ndim != 1:
+        raise ValueError(f"mask must be flat, got shape {tuple(mask.shape)}")
+    if mask.numel() % int(sequence_count) != 0:
+        raise ValueError(
+            f"flat mask length {mask.numel()} is not divisible by sequence_count "
+            f"{int(sequence_count)}"
+        )
+
+    max_len = mask.numel() // int(sequence_count)
+    weights = th.ones(mask.shape, dtype=th.float32, device=mask.device)
+    first_step_offsets = th.arange(int(sequence_count), device=mask.device) * int(max_len)
+    weights[first_step_offsets] = float(first_step_weight)
+    return weights
+
+
+def soft_place_cell_cross_entropy(
+    pc_logits: th.Tensor,
+    pc_targets: th.Tensor,
+    mask: th.Tensor | None = None,
+    weights: th.Tensor | None = None,
+) -> th.Tensor:
     if pc_logits.shape != pc_targets.shape:
-        raise ValueError(f"pc_logits shape {tuple(pc_logits.shape)} != pc_targets shape {tuple(pc_targets.shape)}")
+        raise ValueError(
+            f"pc_logits shape {tuple(pc_logits.shape)} != pc_targets shape "
+            f"{tuple(pc_targets.shape)}"
+        )
 
     per_step = -(pc_targets * F.log_softmax(pc_logits, dim=-1)).sum(dim=-1)
-    if mask is None:
+    if weights is None and mask is None:
         return per_step.mean()
 
-    mask = mask.bool()
-    if mask.shape != per_step.shape:
-        raise ValueError(f"mask shape {tuple(mask.shape)} != loss shape {tuple(per_step.shape)}")
-    if not th.any(mask):
+    if weights is None:
+        active_weights = th.ones_like(per_step)
+    else:
+        if weights.shape != per_step.shape:
+            raise ValueError(
+                f"weights shape {tuple(weights.shape)} != loss shape {tuple(per_step.shape)}"
+            )
+        active_weights = weights.to(device=per_step.device, dtype=per_step.dtype)
+
+    if mask is not None:
+        mask = mask.bool()
+        if mask.shape != per_step.shape:
+            raise ValueError(f"mask shape {tuple(mask.shape)} != loss shape {tuple(per_step.shape)}")
+        active_weights = active_weights * mask.to(dtype=active_weights.dtype)
+
+    total_weight = active_weights.sum()
+    if total_weight <= 0:
         return per_step.mean() * 0.0
-    return per_step[mask].mean()
+    return (per_step * active_weights).sum() / total_weight

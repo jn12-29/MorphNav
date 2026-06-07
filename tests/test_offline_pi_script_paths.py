@@ -46,6 +46,7 @@ def test_fresh_model_kwargs_loads_policy_settings_from_zoo_config():
     assert kwargs["learning_rate"] == 3e-4
     assert kwargs["seed"] == 11
     assert kwargs["device"] == "cpu"
+    assert kwargs["pi_first_step_loss_weight"] == 10.0
     assert kwargs["pi_target_key"] == "achieved_goal"
     assert kwargs["policy_kwargs"]["features_extractor_kwargs"] == {"drop_keys": ["achieved_goal"]}
     assert kwargs["policy_kwargs"]["lstm_hidden_size"] == 256

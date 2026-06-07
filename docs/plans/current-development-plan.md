@@ -3,8 +3,7 @@
 ## Documentation Policy
 
 - `README.md` is the current user entry point.
-- `CLAUDE.md` is a short mistake-prevention note for Claude Code.
-- `AGENTS.md` is intentionally not maintained.
+- `AGENTS.md` is the project-specific mistake-prevention note for agents.
 - The old `docs/superpowers/` plugin documents are no longer the source of truth.
 - `docs/ref/` is local reference material only and is not part of the tracked plan.
 

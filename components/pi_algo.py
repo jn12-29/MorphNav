@@ -15,7 +15,7 @@ from gymnasium import spaces
 from stable_baselines3.common.utils import explained_variance
 from sb3_contrib.ppo_recurrent.ppo_recurrent import BasePolicy, RecurrentPPO
 
-from components.path_integration import soft_place_cell_cross_entropy
+from components.path_integration import recurrent_first_step_loss_weights, soft_place_cell_cross_entropy
 from components.pi_policy import PathIntegrationRecurrentActorCriticPolicy
 
 
@@ -28,6 +28,7 @@ class PathIntegrationRecurrentPPO(RecurrentPPO):
         self,
         *args,
         pi_loss_coef: float = 1.0,
+        pi_first_step_loss_weight: float = 10.0,
         pi_target_key: str = "achieved_goal",
         pi_n_place_cells: int = 256,
         pi_place_cell_scale: float = 0.01,
@@ -46,6 +47,9 @@ class PathIntegrationRecurrentPPO(RecurrentPPO):
 
         super().__init__(*args, **kwargs)
         self.pi_loss_coef = float(pi_loss_coef)
+        if pi_first_step_loss_weight <= 0.0:
+            raise ValueError("pi_first_step_loss_weight must be positive")
+        self.pi_first_step_loss_weight = float(pi_first_step_loss_weight)
         self.pi_target_key = str(pi_target_key)
 
     def train(self) -> None:
@@ -115,7 +119,18 @@ class PathIntegrationRecurrentPPO(RecurrentPPO):
                     )
                 target_pos = rollout_data.observations[self.pi_target_key].float()
                 pc_targets = self.policy.path_integration_target_encoder(target_pos).to(dtype=pi_outputs.pc_logits.dtype)
-                pi_loss = soft_place_cell_cross_entropy(pi_outputs.pc_logits, pc_targets, mask=mask)
+                sequence_count = int(rollout_data.lstm_states.pi[0].shape[1])
+                loss_weights = recurrent_first_step_loss_weights(
+                    mask,
+                    sequence_count=sequence_count,
+                    first_step_weight=self.pi_first_step_loss_weight,
+                )
+                pi_loss = soft_place_cell_cross_entropy(
+                    pi_outputs.pc_logits,
+                    pc_targets,
+                    mask=mask,
+                    weights=loss_weights,
+                )
                 pi_losses.append(pi_loss.item())
 
                 loss = policy_loss + self.ent_coef * entropy_loss + self.vf_coef * value_loss + self.pi_loss_coef * pi_loss
@@ -151,6 +166,7 @@ class PathIntegrationRecurrentPPO(RecurrentPPO):
         self.logger.record("train/loss", loss.item())
         self.logger.record("train/explained_variance", explained_var)
         self.logger.record("train/pi_loss_coef", self.pi_loss_coef)
+        self.logger.record("train/pi_first_step_loss_weight", self.pi_first_step_loss_weight)
 
         if hasattr(self.policy, "log_std"):
             self.logger.record("train/std", th.exp(self.policy.log_std).mean().item())

@@ -1,13 +1,13 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file lists MorphNav-specific traps that Claude Code tends to miss.
+This file lists MorphNav-specific traps that agents tend to miss.
 
 ## Rules
 
 - `README.md` is the user entry point, but not the full source of truth. Inspect scripts and code before changing commands or behavior.
 - Run project commands in the conda `mz` environment. If the tool shell does not inherit the user's active shell environment, use `conda run -n mz ...` explicitly.
 - Pytest can appear to hang under the sandbox for this project. If a test run stalls without output, check for sandbox-related blockage and rerun the test outside the sandbox instead of assuming the tests are broken.
-- Do not create or maintain `AGENTS.md`. The old `docs/superpowers/` plugin documents are not source-of-truth docs.
+- Treat this file as the project-specific agent rules file. The old `docs/superpowers/` plugin documents are not source-of-truth docs.
 - `rl-baselines3-zoo/` is the local training stack and a git submodule. Avoid editing it unless the task requires training-stack changes, and check submodule status when it changes.
 - Treat `scripts/*.sh` as experiment notes. They may contain fixed GPU ids, local absolute paths, and stale command variants.
 - New data and output paths should follow the project layout: reusable datasets under `data/datasets/`; experiment outputs, models, TensorBoard logs, rollout recordings, metrics, and analysis artifacts under `runs/`.
@@ -17,6 +17,7 @@ This file lists MorphNav-specific traps that Claude Code tends to miss.
 - PI initial-position awareness is part of the model contract: `start_pos` remains in observations, and `pi_init_state_key='start_pos'` encodes it into actor/critic LSTM initial states. The default config also keeps `start_pos` in per-step features; a custom config may drop it from `features_extractor_kwargs.drop_keys` while preserving initial-state injection.
 - Online `pi_ppo_lstm` eval writes PI visualization artifacts for all bottleneck units under the SB3 run's `pi_eval/step_<timesteps>/`; keep `components/pi_eval_visualization.py`, `components/pi_eval_callback.py`, `rl-baselines3-zoo/rl_zoo3/exp_manager.py`, README examples, and TensorBoard `eval/pi/*` scalar names aligned when changing it.
 - Standalone offline PI runs write a full run directory under `runs/offline_pi/`: keep `train.log`, `config.json`, `metrics/metrics.jsonl`, compatibility metrics, checkpoints, and probe artifacts aligned when changing that workflow.
+- Offline and online PI loss weight timestep 0 of each recurrent sequence through `first_step_loss_weight` / `pi_first_step_loss_weight`; keep those defaults aligned with `rl-baselines3-zoo/conf/maze_pi.yml`, `scripts/pi.sh`, and README examples.
 - Offline PI localization logs include full-sequence `localization_*` metrics plus first-step `first_localization_*` metrics; first-step means timestep 0 of each recurrent sequence, not a separate raw `start_pos` target.
 - `scripts/pi.sh` default offline rehearsal commands enable both `--eval-artifact-every-epochs 1` and `--eval-gridscore-every-epochs 1`; keep those examples aligned with README when changing offline probe visualization cadence.
 - Offline PI probe-time grid-score analysis is opt-in through `--eval-gridscore-every-epochs`; keep `components/offline_pi_gridscore.py`, `scripts/analyze_offline_pi_representations.py`, README examples, metrics JSONL, and TensorBoard scalar names aligned when changing it.

@@ -1,3 +1,4 @@
+import inspect
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -15,6 +16,7 @@ from components.dataset_gen.pointmaze_zarr_writer import write_shard
 from components.offline_pi_eval_artifacts import export_probe_artifacts
 from components.offline_pi_gridscore import export_gridscore_artifacts
 from components.offline_pi_rehearsal import (
+    _mean_metrics,
     count_offline_pi_sequences,
     compute_offline_pi_loss,
     decode_offline_pi_coordinates,
@@ -24,6 +26,7 @@ from components.offline_pi_rehearsal import (
     run_offline_pi_probe,
     run_offline_pi_rehearsal,
 )
+from components.path_integration import recurrent_first_step_loss_weights, soft_place_cell_cross_entropy
 from components.pi_policy import PathIntegrationRecurrentActorCriticPolicy
 
 
@@ -120,6 +123,25 @@ def test_online_optimizer_contains_path_integration_parameters():
             assert id(param) in optimizer_param_ids
 
 
+def test_soft_place_cell_cross_entropy_supports_first_step_weights():
+    pc_logits = th.tensor([[2.0, 0.0], [0.0, 2.0], [2.0, 0.0], [0.0, 2.0]])
+    pc_targets = th.tensor([[1.0, 0.0], [1.0, 0.0], [0.0, 1.0], [0.0, 1.0]])
+    mask = th.tensor([True, True, True, False])
+
+    unit_weights = recurrent_first_step_loss_weights(mask, sequence_count=2, first_step_weight=1.0)
+    weighted = recurrent_first_step_loss_weights(mask, sequence_count=2, first_step_weight=10.0)
+    per_step = -(pc_targets * th.log_softmax(pc_logits, dim=-1)).sum(dim=-1)
+
+    unweighted_loss = soft_place_cell_cross_entropy(pc_logits, pc_targets, mask=mask)
+    unit_weight_loss = soft_place_cell_cross_entropy(pc_logits, pc_targets, mask=mask, weights=unit_weights)
+    weighted_loss = soft_place_cell_cross_entropy(pc_logits, pc_targets, mask=mask, weights=weighted)
+
+    th.testing.assert_close(unit_weight_loss, unweighted_loss)
+    th.testing.assert_close(weighted, th.tensor([10.0, 1.0, 10.0, 1.0]))
+    expected = (per_step[0] * 10.0 + per_step[1] + per_step[2] * 10.0) / 21.0
+    th.testing.assert_close(weighted_loss, expected)
+
+
 def test_offline_loader_and_loss_run_on_padded_recurrent_batch(tmp_path: Path):
     dataset_root = _write_dataset(tmp_path)
     policy = _make_policy()
@@ -142,8 +164,9 @@ def test_offline_loader_and_loss_run_on_padded_recurrent_batch(tmp_path: Path):
     assert first_step_mask_from_batch(batch).tolist() == [True, False, True, False]
     np.testing.assert_allclose(batch.obs["start_pos"][2].cpu().numpy(), batch.target_pos[2].cpu().numpy())
 
-    loss, metrics = compute_offline_pi_loss(policy, batch)
+    loss, metrics = compute_offline_pi_loss(policy, batch, first_step_loss_weight=10.0)
     assert loss.ndim == 0
+    assert metrics["loss_weight_sum"] == 21.0
     assert metrics["masked_steps"] == 3.0
     assert metrics["first_step_count"] == 2.0
     assert metrics["localization_mse"] >= 0.0
@@ -165,6 +188,92 @@ def test_offline_loader_and_loss_run_on_padded_recurrent_batch(tmp_path: Path):
     assert decoded.target_xy.shape == batch.target_pos.shape
     assert decoded.mask.tolist() == batch.mask.tolist()
     assert decoded.metrics["mse"] == pytest.approx(metrics["localization_mse"])
+
+
+def test_compute_offline_pi_loss_weights_sequence_first_steps(tmp_path: Path):
+    dataset_root = _write_dataset(tmp_path)
+    policy = _make_policy()
+    batch = next(
+        load_offline_pi_batches(
+            dataset_root,
+            batch_size_sequences=2,
+            max_seq_len=2,
+            shuffle=False,
+            device="cpu",
+            n_lstm_layers=1,
+            lstm_hidden_size=8,
+        )
+    )
+
+    default_loss, default_metrics = compute_offline_pi_loss(policy, batch)
+    unweighted_loss, unweighted_metrics = compute_offline_pi_loss(policy, batch, first_step_loss_weight=1.0)
+    weighted_loss, weighted_metrics = compute_offline_pi_loss(policy, batch, first_step_loss_weight=10.0)
+    outputs, _ = policy.forward_pi(batch.obs, batch.lstm_states_pi, batch.episode_starts)
+    targets = policy.path_integration_target_encoder(batch.target_pos).to(dtype=outputs.pc_logits.dtype)
+    expected = soft_place_cell_cross_entropy(
+        outputs.pc_logits,
+        targets,
+        mask=batch.mask,
+        weights=recurrent_first_step_loss_weights(
+            batch.mask,
+            sequence_count=batch.sequence_count,
+            first_step_weight=10.0,
+        ),
+    )
+
+    th.testing.assert_close(default_loss, weighted_loss)
+    th.testing.assert_close(weighted_loss, expected)
+    assert default_metrics["loss_weight_sum"] == pytest.approx(weighted_metrics["loss_weight_sum"])
+    assert float(weighted_loss.detach().cpu().item()) != pytest.approx(
+        float(unweighted_loss.detach().cpu().item())
+    )
+    assert weighted_metrics["localization_mse"] == pytest.approx(unweighted_metrics["localization_mse"])
+
+
+def _metric_row(
+    *,
+    loss: float,
+    loss_weight_sum: float,
+    masked_steps: float,
+    first_step_count: float,
+) -> dict[str, float]:
+    return {
+        "loss": loss,
+        "loss_weight_sum": loss_weight_sum,
+        "localization_mse": 4.0,
+        "localization_mae": 2.0,
+        "x_mae": 1.0,
+        "y_mae": 3.0,
+        "first_localization_mse": 1.0,
+        "first_localization_mae": 1.0,
+        "first_x_mae": 1.0,
+        "first_y_mae": 1.0,
+        "first_localization_mse_ratio": 0.25,
+        "first_localization_mae_ratio": 0.5,
+        "masked_steps": masked_steps,
+        "first_step_count": first_step_count,
+        "sequence_count": 1.0,
+    }
+
+
+def test_mean_metrics_aggregates_weighted_loss_by_effective_loss_weights():
+    metrics = _mean_metrics(
+        [
+            _metric_row(loss=10.0, loss_weight_sum=19.0, masked_steps=10.0, first_step_count=1.0),
+            _metric_row(loss=1.0, loss_weight_sum=10.0, masked_steps=1.0, first_step_count=1.0),
+        ],
+        "offline_pi",
+    )
+
+    assert metrics["offline_pi/loss"] == pytest.approx((10.0 * 19.0 + 1.0 * 10.0) / 29.0)
+    assert metrics["offline_pi/loss_weight_sum"] == 29.0
+    assert metrics["offline_pi/steps"] == 11.0
+
+
+def test_offline_pi_public_helpers_default_to_first_step_weight_10():
+    assert inspect.signature(compute_offline_pi_loss).parameters["first_step_loss_weight"].default == 10.0
+    assert inspect.signature(run_offline_pi_rehearsal).parameters["first_step_loss_weight"].default == 10.0
+    assert inspect.signature(run_offline_pi_probe).parameters["first_step_loss_weight"].default == 10.0
 
 
 def test_count_offline_pi_sequences_respects_max_seq_len(tmp_path: Path):

@@ -1,3 +1,4 @@
+import inspect
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,7 +12,8 @@ from components.offline_pi_runtime import (
     make_run_dirs,
     write_json_atomic,
 )
-from components.offline_pi_workflow import _event_epoch_metrics, run_offline_pi_workflow
+from components.offline_pi_workflow import _event_epoch_metrics, _first_step_loss_weight, run_offline_pi_workflow
+from components.pi_algo import PathIntegrationRecurrentPPO
 from scripts.offline_pi_rehearsal import PI_ZOO_CONFIG_PATH, build_parser
 
 
@@ -93,6 +95,7 @@ def test_workflow_config_records_tensorboard_dependency_fallback(tmp_path: Path)
         output_dir=None,
         run_name=None,
         learning_rate=1e-4,
+        first_step_loss_weight=10.0,
         batch_size_sequences=2,
         max_seq_len=None,
         max_updates=None,
@@ -153,6 +156,7 @@ def test_workflow_config_records_tensorboard_dependency_fallback(tmp_path: Path)
     assert config["tensorboard_enabled"] is False
     assert "TensorBoard dependencies are unavailable" in config["tensorboard_disabled_reason"]
     assert config["fresh_model_config_path"] is None
+    assert config["first_step_loss_weight"] == 10.0
 
 
 def test_epoch_event_samples_seen_is_cumulative():
@@ -191,6 +195,22 @@ def test_offline_pi_cli_tensorboard_defaults_on():
 
     assert args.tensorboard is True
     assert disabled.tensorboard is False
+
+
+def test_offline_pi_cli_first_step_loss_weight_default():
+    parser = build_parser()
+
+    args = parser.parse_args(["--dataset-root", "data/datasets/pointmaze/phase1_pi/rehearsal_seed0"])
+
+    assert args.first_step_loss_weight == 10.0
+
+
+def test_offline_pi_workflow_first_step_loss_weight_fallback():
+    assert _first_step_loss_weight(SimpleNamespace()) == 10.0
+
+
+def test_online_pi_algo_first_step_loss_weight_default():
+    assert inspect.signature(PathIntegrationRecurrentPPO).parameters["pi_first_step_loss_weight"].default == 10.0
 
 
 def test_offline_pi_cli_gridscore_defaults_off():
@@ -232,6 +252,7 @@ def test_workflow_probe_records_gridscore_metrics_and_summary(tmp_path: Path):
         output_dir=None,
         run_name=None,
         learning_rate=1e-4,
+        first_step_loss_weight=10.0,
         batch_size_sequences=2,
         max_seq_len=None,
         max_updates=None,

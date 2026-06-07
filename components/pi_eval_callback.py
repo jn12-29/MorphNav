@@ -14,7 +14,7 @@ class OnlinePIEvalVisualizationCallback(BaseCallback):
         output_root: str | Path,
         *,
         n_eval_episodes: int = 4,
-        target_key: str = "achieved_goal",
+        target_key: str | None = None,
         deterministic: bool = True,
         n_bins: int = 32,
         max_units: int | None = None,
@@ -46,6 +46,11 @@ class OnlinePIEvalVisualizationCallback(BaseCallback):
         self.logger.record("eval/pi/gridscore_valid_units", float(gridscore["valid_units"]))
         self.logger.dump(self.num_timesteps)
 
+    def _resolved_target_key(self) -> str:
+        if self.target_key is not None:
+            return str(self.target_key)
+        return str(getattr(self.model, "pi_target_key", "achieved_goal"))
+
     def _on_step(self) -> bool:
         eval_env = getattr(self.parent, "eval_env", None)
         if eval_env is None or not callable(getattr(self.model, "predict_with_pi", None)):
@@ -58,7 +63,7 @@ class OnlinePIEvalVisualizationCallback(BaseCallback):
                 eval_env,
                 output_dir,
                 n_eval_episodes=self.n_eval_episodes,
-                target_key=self.target_key,
+                target_key=self._resolved_target_key(),
                 deterministic=self.deterministic,
                 n_bins=self.n_bins,
                 max_units=self.max_units,

@@ -14,6 +14,7 @@ python scripts/generate_pointmaze_dataset.py \
 
 
 # Offline Phase 1 PI rehearsal. maze_pi.yml encodes obs/start_pos into LSTM initial states.
+# PI loss weights timestep 0 of each recurrent sequence by 10x.
 # Metrics include full-sequence and first-step localization errors.
 # Fresh models use rl-baselines3-zoo/conf/maze_pi.yml unless --config-path overrides it.
 # eval-every-epochs controls probe frequency.
@@ -24,6 +25,7 @@ CUDA_VISIBLE_DEVICES=4 conda run -n mz python scripts/offline_pi_rehearsal.py \
   --dataset-root data/datasets/pointmaze/phase1_pi/rehearsal_seed0 \
   --probe-dataset-root data/datasets/pointmaze/phase1_pi/probe_seed1 \
   --epochs 300 \
+  --first-step-loss-weight 10.0 \
   --eval-every-epochs 1 \
   --eval-artifact-every-epochs 1 \
   --eval-gridscore-every-epochs 1 \
@@ -34,6 +36,7 @@ CUDA_VISIBLE_DEVICES=1 conda run -n mz python scripts/offline_pi_rehearsal.py \
   --dataset-root data/datasets/pointmaze/phase1_pi/rehearsal_seed0 \
   --probe-dataset-root data/datasets/pointmaze/phase1_pi/probe_seed1 \
   --epochs 300 \
+  --first-step-loss-weight 10.0 \
   --eval-every-epochs 1 \
   --eval-artifact-every-epochs 1 \
   --eval-gridscore-every-epochs 1 \

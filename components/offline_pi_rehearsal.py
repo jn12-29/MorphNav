@@ -1,9 +1,9 @@
 """Offline PointMaze PI rehearsal and probe helpers.
 
 This module trains or evaluates only the PI path of the current `pi_ppo_lstm`
-model. The optimization loss is place-cell cross-entropy; coordinate MSE is
-reported only as a localization metric, and offline rehearsal uses an optimizer
-separate from PPO.
+model. The optimization loss is weighted place-cell cross-entropy; coordinate
+MSE is reported only as a localization metric, and offline rehearsal uses an
+optimizer separate from PPO.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ from components.dataset_gen.pointmaze_config import (
     POINTMAZE_MUJOCO_ZARR_SCHEMA_VERSION,
     POINTMAZE_POLICY_OBS_KEYS,
 )
-from components.path_integration import soft_place_cell_cross_entropy
+from components.path_integration import recurrent_first_step_loss_weights, soft_place_cell_cross_entropy
 from components.pi_policy import PathIntegrationRecurrentActorCriticPolicy
 
 
@@ -291,10 +291,20 @@ def decode_offline_pi_coordinates(
 def compute_offline_pi_loss(
     policy: PathIntegrationRecurrentActorCriticPolicy,
     batch: OfflinePIBatch,
+    *,
+    first_step_loss_weight: float = 10.0,
 ) -> tuple[th.Tensor, dict[str, float]]:
     pi_outputs, _ = policy.forward_pi(batch.obs, batch.lstm_states_pi, batch.episode_starts)
     pc_targets = policy.path_integration_target_encoder(batch.target_pos).to(dtype=pi_outputs.pc_logits.dtype)
-    loss = soft_place_cell_cross_entropy(pi_outputs.pc_logits, pc_targets, mask=batch.mask)
+    loss_weights = recurrent_first_step_loss_weights(
+        batch.mask,
+        sequence_count=batch.sequence_count,
+        first_step_weight=first_step_loss_weight,
+    )
+    loss = soft_place_cell_cross_entropy(pi_outputs.pc_logits, pc_targets, mask=batch.mask, weights=loss_weights)
+    loss_weight_sum = (
+        loss_weights.to(dtype=pi_outputs.pc_logits.dtype) * batch.mask.to(dtype=pi_outputs.pc_logits.dtype)
+    ).sum()
 
     with th.no_grad():
         decoded = decode_offline_pi_coordinates(policy, pi_outputs.pc_logits, batch.target_pos, batch.mask)
@@ -325,6 +335,7 @@ def compute_offline_pi_loss(
             first_step_metrics["mae"],
             decoded.metrics["mae"],
         ),
+        "loss_weight_sum": float(loss_weight_sum.detach().cpu().item()),
         "masked_steps": float(batch.mask.sum().detach().cpu().item()),
         "first_step_count": float(first_step_mask.sum().detach().cpu().item()),
         "sequence_count": float(batch.sequence_count),
@@ -386,20 +397,24 @@ def _mean_metrics(metric_rows: list[dict[str, float]], prefix: str) -> dict[str,
             f"{prefix}/first_y_mae": float("nan"),
             f"{prefix}/first_localization_mse_ratio": float("nan"),
             f"{prefix}/first_localization_mae_ratio": float("nan"),
+            f"{prefix}/loss_weight_sum": 0.0,
             f"{prefix}/steps": 0.0,
             f"{prefix}/first_step_count": 0.0,
             f"{prefix}/sequence_count": 0.0,
         }
+    weighted_loss_steps = sum(row["loss_weight_sum"] for row in metric_rows)
     weighted_steps = sum(row["masked_steps"] for row in metric_rows)
     weighted_first_steps = sum(row["first_step_count"] for row in metric_rows)
+    if weighted_loss_steps > 0:
+        loss = sum(row["loss"] * row["loss_weight_sum"] for row in metric_rows) / weighted_loss_steps
+    else:
+        loss = float(np.mean([row["loss"] for row in metric_rows]))
     if weighted_steps > 0:
-        loss = sum(row["loss"] * row["masked_steps"] for row in metric_rows) / weighted_steps
         localization_mse = sum(row["localization_mse"] * row["masked_steps"] for row in metric_rows) / weighted_steps
         localization_mae = sum(row["localization_mae"] * row["masked_steps"] for row in metric_rows) / weighted_steps
         x_mae = sum(row["x_mae"] * row["masked_steps"] for row in metric_rows) / weighted_steps
         y_mae = sum(row["y_mae"] * row["masked_steps"] for row in metric_rows) / weighted_steps
     else:
-        loss = float(np.mean([row["loss"] for row in metric_rows]))
         localization_mse = float(np.mean([row["localization_mse"] for row in metric_rows]))
         localization_mae = float(np.mean([row["localization_mae"] for row in metric_rows]))
         x_mae = float(np.mean([row["x_mae"] for row in metric_rows]))
@@ -444,6 +459,7 @@ def _mean_metrics(metric_rows: list[dict[str, float]], prefix: str) -> dict[str,
             first_localization_mae,
             localization_mae,
         ),
+        f"{prefix}/loss_weight_sum": float(weighted_loss_steps),
         f"{prefix}/steps": float(weighted_steps),
         f"{prefix}/first_step_count": float(weighted_first_steps),
         f"{prefix}/sequence_count": float(sum(row["sequence_count"] for row in metric_rows)),
@@ -471,11 +487,14 @@ def run_offline_pi_rehearsal(
     n_epochs: int = 1,
     shuffle: bool = True,
     seed: int | None = None,
+    first_step_loss_weight: float = 10.0,
     logger: Any | None = None,
     on_epoch_start: Callable[[dict[str, Any]], None] | None = None,
     on_update: Callable[[dict[str, Any]], None] | None = None,
     on_epoch_end: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, float]:
+    if first_step_loss_weight <= 0.0:
+        raise ValueError("first_step_loss_weight must be positive")
     policy: PathIntegrationRecurrentActorCriticPolicy = model.policy
     policy.set_training_mode(True)
     if optimizer is policy.optimizer:
@@ -505,7 +524,11 @@ def run_offline_pi_rehearsal(
         )
         for batch in batches:
             offline_optimizer.zero_grad()
-            loss, metrics = compute_offline_pi_loss(policy, batch)
+            loss, metrics = compute_offline_pi_loss(
+                policy,
+                batch,
+                first_step_loss_weight=first_step_loss_weight,
+            )
             loss.backward()
             offline_optimizer.step()
             metric_rows.append(metrics)
@@ -568,8 +591,11 @@ def run_offline_pi_probe(
     *,
     batch_size_sequences: int = 16,
     max_seq_len: int | None = None,
+    first_step_loss_weight: float = 10.0,
     logger: Any | None = None,
 ) -> dict[str, float]:
+    if first_step_loss_weight <= 0.0:
+        raise ValueError("first_step_loss_weight must be positive")
     policy: PathIntegrationRecurrentActorCriticPolicy = model.policy
     policy.set_training_mode(False)
     n_lstm_layers, lstm_hidden_size = _policy_lstm_shape(policy)
@@ -584,7 +610,11 @@ def run_offline_pi_probe(
         n_lstm_layers=n_lstm_layers,
         lstm_hidden_size=lstm_hidden_size,
     ):
-        _loss, metrics = compute_offline_pi_loss(policy, batch)
+        _loss, metrics = compute_offline_pi_loss(
+            policy,
+            batch,
+            first_step_loss_weight=first_step_loss_weight,
+        )
         metric_rows.append(metrics)
 
     metrics = _mean_metrics(metric_rows, "offline_pi/probe")

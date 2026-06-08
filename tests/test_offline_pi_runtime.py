@@ -4,6 +4,8 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import torch as th
+
 from components.offline_pi_runtime import (
     TensorBoardRunWriter,
     append_jsonl,
@@ -12,7 +14,13 @@ from components.offline_pi_runtime import (
     make_run_dirs,
     write_json_atomic,
 )
-from components.offline_pi_workflow import _event_epoch_metrics, _first_step_loss_weight, run_offline_pi_workflow
+from components.offline_pi_workflow import (
+    _event_epoch_metrics,
+    _first_step_loss_weight,
+    _offline_pi_optimizer_kwargs,
+    _optimizer_name,
+    run_offline_pi_workflow,
+)
 from components.pi_algo import PathIntegrationRecurrentPPO
 from scripts.offline_pi_rehearsal import PI_ZOO_CONFIG_PATH, build_parser
 
@@ -157,6 +165,10 @@ def test_workflow_config_records_tensorboard_dependency_fallback(tmp_path: Path)
     assert "TensorBoard dependencies are unavailable" in config["tensorboard_disabled_reason"]
     assert config["fresh_model_config_path"] is None
     assert config["first_step_loss_weight"] == 10.0
+    assert config["optimizer"] == "adam"
+    assert config["weight_decay"] == 0.0
+    assert config["momentum"] == 0.0
+    assert config["optimizer_kwargs"] == {"weight_decay": 0.0}
 
 
 def test_epoch_event_samples_seen_is_cumulative():
@@ -203,6 +215,56 @@ def test_offline_pi_cli_first_step_loss_weight_default():
     args = parser.parse_args(["--dataset-root", "data/datasets/pointmaze/phase1_pi/rehearsal_seed0"])
 
     assert args.first_step_loss_weight == 10.0
+
+
+def test_offline_pi_cli_optimizer_defaults_and_choices():
+    parser = build_parser()
+
+    default_args = parser.parse_args(["--dataset-root", "data/datasets/pointmaze/phase1_pi/rehearsal_seed0"])
+    adamw_args = parser.parse_args(
+        [
+            "--dataset-root",
+            "data/datasets/pointmaze/phase1_pi/rehearsal_seed0",
+            "--optimizer",
+            "adamw",
+            "--weight-decay",
+            "0.01",
+        ]
+    )
+    sgd_args = parser.parse_args(
+        [
+            "--dataset-root",
+            "data/datasets/pointmaze/phase1_pi/rehearsal_seed0",
+            "--optimizer",
+            "sgd",
+            "--weight-decay",
+            "0.02",
+            "--momentum",
+            "0.9",
+        ]
+    )
+    rmsprop_args = parser.parse_args(
+        [
+            "--dataset-root",
+            "data/datasets/pointmaze/phase1_pi/rehearsal_seed0",
+            "--optimizer",
+            "rmsprop",
+            "--weight-decay",
+            "0.03",
+            "--momentum",
+            "0.5",
+        ]
+    )
+
+    assert default_args.optimizer == "adam"
+    assert default_args.weight_decay == 0.0
+    assert default_args.momentum == 0.0
+    assert adamw_args.optimizer == "adamw"
+    assert adamw_args.weight_decay == 0.01
+    assert _optimizer_name(sgd_args) == "sgd"
+    assert _offline_pi_optimizer_kwargs(sgd_args) == {"weight_decay": 0.02, "momentum": 0.9}
+    assert _optimizer_name(rmsprop_args) == "rmsprop"
+    assert _offline_pi_optimizer_kwargs(rmsprop_args) == {"weight_decay": 0.03, "momentum": 0.5}
 
 
 def test_offline_pi_workflow_first_step_loss_weight_fallback():
@@ -333,3 +395,66 @@ def test_workflow_probe_records_gridscore_metrics_and_summary(tmp_path: Path):
     assert probe_event["gridscore_summary"] == gridscore_summary
     final_metrics = json.loads((tmp_path / "run" / "metrics" / "offline_pi_metrics.json").read_text(encoding="utf-8"))
     assert final_metrics["offline_pi/probe/gridscore/best"] == 0.25
+
+
+def test_workflow_train_passes_offline_optimizer_settings(tmp_path: Path):
+    dataset_root = tmp_path / "dataset"
+    dataset_root.mkdir()
+    args = SimpleNamespace(
+        mode="train",
+        dataset_root=dataset_root,
+        probe_dataset_root=None,
+        model_path=None,
+        output_dir=None,
+        run_name=None,
+        learning_rate=1e-4,
+        optimizer="adamw",
+        weight_decay=0.02,
+        momentum=0.0,
+        first_step_loss_weight=10.0,
+        batch_size_sequences=2,
+        max_seq_len=None,
+        max_updates=1,
+        epochs=1,
+        seed=0,
+        device="cpu",
+        log_every_updates=1,
+        eval_every_epochs=0,
+        eval_at_start=False,
+        eval_artifact_every_epochs=0,
+        eval_gridscore_every_epochs=0,
+        gridscore_n_bins=32,
+        gridscore_max_steps=None,
+        gridscore_top_k=8,
+        checkpoint_every_epochs=0,
+        save_final_checkpoint=False,
+        tensorboard=False,
+        tensorboard_log_dir=None,
+    )
+    train_metrics = {
+        "offline_pi/loss": 1.0,
+        "offline_pi/localization_mse": 2.0,
+        "offline_pi/first_localization_mse": 0.5,
+        "offline_pi/first_localization_mse_ratio": 0.25,
+        "offline_pi/updates": 1.0,
+        "offline_pi/final_epoch": 1.0,
+        "offline_pi/steps": 4.0,
+    }
+
+    with patch("components.offline_pi_workflow.run_offline_pi_rehearsal", return_value=train_metrics) as train_mock:
+        run_offline_pi_workflow(
+            object(),
+            args,
+            output_dir=tmp_path / "run",
+            run_name="run",
+            fresh_model_settings=None,
+        )
+
+    train_mock.assert_called_once()
+    assert train_mock.call_args.kwargs["optimizer_cls"] is th.optim.AdamW
+    assert train_mock.call_args.kwargs["optimizer_kwargs"] == {"weight_decay": 0.02}
+    config = json.loads((tmp_path / "run" / "config.json").read_text(encoding="utf-8"))
+    assert config["optimizer"] == "adamw"
+    assert config["weight_decay"] == 0.02
+    assert config["momentum"] == 0.0
+    assert config["optimizer_kwargs"] == {"weight_decay": 0.02}

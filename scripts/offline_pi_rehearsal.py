@@ -11,6 +11,7 @@ import sys
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/morphnav_matplotlib")
 
 import gymnasium as gym
+import torch as th
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -21,9 +22,10 @@ import envs  # noqa: F401  # Registers local Gymnasium envs.
 from components import CustomCombinedExtractor, PathIntegrationRecurrentPPO
 from components.dataset_gen.pointmaze_config import make_phase1_pointmaze_pi_env_config
 from components.dataset_gen.pointmaze_env_factory import build_pointmaze_env_kwargs
+from components.offline_pi_rehearsal import offline_pi_optimizer_names
 from components.offline_pi_workflow import run_offline_pi_workflow
 
-_ZOO_EVAL_GLOBALS = {"CustomCombinedExtractor": CustomCombinedExtractor}
+_ZOO_EVAL_GLOBALS = {"CustomCombinedExtractor": CustomCombinedExtractor, "th": th, "torch": th}
 
 PI_ZOO_CONFIG_PATH = REPO_ROOT / "rl-baselines3-zoo" / "conf" / "maze_pi.yml"
 
@@ -38,6 +40,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model-path", type=Path, default=None)
     parser.add_argument("--config-path", type=Path, default=PI_ZOO_CONFIG_PATH)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
+    parser.add_argument("--optimizer", choices=offline_pi_optimizer_names(), default="adam")
+    parser.add_argument("--weight-decay", type=float, default=0.0)
+    parser.add_argument("--momentum", type=float, default=0.0)
     parser.add_argument("--first-step-loss-weight", type=float, default=10.0)
     parser.add_argument("--batch-size-sequences", type=int, default=16)
     parser.add_argument("--max-seq-len", type=int, default=1000)
@@ -154,6 +159,12 @@ def _fresh_model_settings(args: argparse.Namespace) -> dict | None:
 def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     if args.batch_size_sequences <= 0:
         parser.error("--batch-size-sequences must be > 0")
+    if args.weight_decay < 0.0:
+        parser.error("--weight-decay must be >= 0")
+    if args.momentum < 0.0:
+        parser.error("--momentum must be >= 0")
+    if args.optimizer in {"adam", "adamw"} and args.momentum != 0.0:
+        parser.error("--momentum is only supported with --optimizer sgd or --optimizer rmsprop")
     if args.first_step_loss_weight <= 0.0:
         parser.error("--first-step-loss-weight must be > 0")
     if args.max_seq_len is not None and args.max_seq_len <= 0:

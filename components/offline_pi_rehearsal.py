@@ -28,10 +28,28 @@ from components.pi_policy import PathIntegrationRecurrentActorCriticPolicy
 
 
 _METRIC_RATIO_EPS = 1e-12
+OFFLINE_PI_OPTIMIZER_CLASSES: dict[str, type[th.optim.Optimizer]] = {
+    "adam": th.optim.Adam,
+    "adamw": th.optim.AdamW,
+    "rmsprop": th.optim.RMSprop,
+    "sgd": th.optim.SGD,
+}
 
 
 def _metric_ratio(numerator: float, denominator: float) -> float:
     return float(numerator) / max(float(denominator), _METRIC_RATIO_EPS)
+
+
+def offline_pi_optimizer_names() -> tuple[str, ...]:
+    return tuple(OFFLINE_PI_OPTIMIZER_CLASSES)
+
+
+def resolve_offline_pi_optimizer_class(name: str) -> type[th.optim.Optimizer]:
+    key = str(name).lower()
+    if key not in OFFLINE_PI_OPTIMIZER_CLASSES:
+        valid = ", ".join(offline_pi_optimizer_names())
+        raise ValueError(f"unsupported offline PI optimizer {name!r}; expected one of: {valid}")
+    return OFFLINE_PI_OPTIMIZER_CLASSES[key]
 
 
 @dataclass(frozen=True)
@@ -480,6 +498,8 @@ def run_offline_pi_rehearsal(
     dataset_root: str | Path,
     *,
     optimizer: th.optim.Optimizer | None = None,
+    optimizer_cls: type[th.optim.Optimizer] = th.optim.Adam,
+    optimizer_kwargs: dict[str, Any] | None = None,
     lr: float = 1e-4,
     batch_size_sequences: int = 16,
     max_seq_len: int | None = None,
@@ -499,7 +519,12 @@ def run_offline_pi_rehearsal(
     policy.set_training_mode(True)
     if optimizer is policy.optimizer:
         raise ValueError("offline PI rehearsal must use an optimizer separate from policy.optimizer")
-    offline_optimizer = optimizer or make_offline_pi_optimizer(policy, lr=lr)
+    offline_optimizer = optimizer or make_offline_pi_optimizer(
+        policy,
+        lr=lr,
+        optimizer_cls=optimizer_cls,
+        **(optimizer_kwargs or {}),
+    )
     n_lstm_layers, lstm_hidden_size = _policy_lstm_shape(policy)
 
     metric_rows: list[dict[str, float]] = []

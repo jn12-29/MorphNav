@@ -6,7 +6,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-from components.offline_pi_rehearsal import count_offline_pi_sequences, run_offline_pi_probe, run_offline_pi_rehearsal
+from components.offline_pi_rehearsal import (
+    count_offline_pi_sequences,
+    resolve_offline_pi_optimizer_class,
+    run_offline_pi_probe,
+    run_offline_pi_rehearsal,
+)
 from components.offline_pi_runtime import (
     TensorBoardRunWriter,
     append_jsonl,
@@ -51,6 +56,26 @@ def _first_step_loss_weight(args: Any) -> float:
     return float(getattr(args, "first_step_loss_weight", 10.0))
 
 
+def _optimizer_name(args: Any) -> str:
+    return str(getattr(args, "optimizer", "adam")).lower()
+
+
+def _optimizer_weight_decay(args: Any) -> float:
+    return float(getattr(args, "weight_decay", 0.0))
+
+
+def _optimizer_momentum(args: Any) -> float:
+    return float(getattr(args, "momentum", 0.0))
+
+
+def _offline_pi_optimizer_kwargs(args: Any) -> dict[str, float]:
+    optimizer_name = _optimizer_name(args)
+    kwargs = {"weight_decay": _optimizer_weight_decay(args)}
+    if optimizer_name in {"rmsprop", "sgd"}:
+        kwargs["momentum"] = _optimizer_momentum(args)
+    return kwargs
+
+
 def _effective_config(
     args: Any,
     *,
@@ -75,6 +100,10 @@ def _effective_config(
         "dataset_root": str(args.dataset_root),
         "probe_dataset_root": str(args.probe_dataset_root) if args.probe_dataset_root is not None else None,
         "learning_rate": args.learning_rate,
+        "optimizer": _optimizer_name(args),
+        "weight_decay": _optimizer_weight_decay(args),
+        "momentum": _optimizer_momentum(args),
+        "optimizer_kwargs": _offline_pi_optimizer_kwargs(args),
         "first_step_loss_weight": _first_step_loss_weight(args),
         "batch_size_sequences": args.batch_size_sequences,
         "max_seq_len": args.max_seq_len,
@@ -423,6 +452,8 @@ def _run_train(
         model,
         args.dataset_root,
         lr=args.learning_rate,
+        optimizer_cls=resolve_offline_pi_optimizer_class(_optimizer_name(args)),
+        optimizer_kwargs=_offline_pi_optimizer_kwargs(args),
         batch_size_sequences=args.batch_size_sequences,
         max_seq_len=args.max_seq_len,
         max_updates=args.max_updates,

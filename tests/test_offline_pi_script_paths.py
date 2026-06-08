@@ -3,6 +3,8 @@ from pathlib import Path
 import sys
 from unittest.mock import patch
 
+import torch as th
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 MODULE_PATH = REPO_ROOT / "scripts" / "offline_pi_rehearsal.py"
@@ -53,6 +55,36 @@ def test_fresh_model_kwargs_loads_policy_settings_from_zoo_config():
     assert kwargs["policy_kwargs"]["pi_init_state_key"] == "start_pos"
     assert "n_envs" not in kwargs
     assert "n_timesteps" not in kwargs
+
+
+def test_fresh_model_kwargs_supports_torch_optimizer_in_zoo_config(tmp_path: Path):
+    config_path = tmp_path / "maze_pi.yml"
+    config_path.write_text(
+        """
+PointMaze:
+  n_envs: 1
+  n_timesteps: 100
+  policy: "PathIntegrationMultiInputLstmPolicy"
+  pi_target_key: "achieved_goal"
+  policy_kwargs: "dict(
+    features_extractor_class=CustomCombinedExtractor,
+    features_extractor_kwargs=dict(drop_keys=['achieved_goal']),
+    optimizer_class=th.optim.AdamW,
+    optimizer_kwargs=dict(weight_decay=0.01))"
+""",
+        encoding="utf-8",
+    )
+
+    model_config = offline_pi_rehearsal_script.fresh_model_kwargs(
+        learning_rate=1e-4,
+        seed=0,
+        device="cpu",
+        config_path=config_path,
+    )
+
+    policy_kwargs = model_config["kwargs"]["policy_kwargs"]
+    assert policy_kwargs["optimizer_class"] is th.optim.AdamW
+    assert policy_kwargs["optimizer_kwargs"] == {"weight_decay": 0.01}
 
 
 def test_fresh_model_settings_uses_cli_config_path():

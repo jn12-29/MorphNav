@@ -23,6 +23,7 @@ from components.offline_pi_rehearsal import (
     first_step_mask_from_batch,
     load_offline_pi_batches,
     make_offline_pi_optimizer,
+    resolve_offline_pi_optimizer_class,
     run_offline_pi_probe,
     run_offline_pi_rehearsal,
 )
@@ -342,6 +343,22 @@ def test_offline_optimizer_membership_excludes_action_and_value_heads():
             continue
         for param in module.parameters():
             assert id(param) not in offline_param_ids
+
+
+def test_offline_optimizer_factory_supports_configured_optimizer_kwargs():
+    policy = _make_policy()
+
+    optimizer = make_offline_pi_optimizer(
+        policy,
+        lr=1e-3,
+        optimizer_cls=resolve_offline_pi_optimizer_class("sgd"),
+        weight_decay=0.02,
+        momentum=0.9,
+    )
+
+    assert isinstance(optimizer, th.optim.SGD)
+    assert optimizer.defaults["weight_decay"] == 0.02
+    assert optimizer.defaults["momentum"] == 0.9
 
 
 def test_probe_leaves_state_dict_unchanged(tmp_path: Path):

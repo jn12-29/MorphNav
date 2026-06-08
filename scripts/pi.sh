@@ -17,6 +17,8 @@ python scripts/generate_pointmaze_dataset.py \
 # PI loss weights timestep 0 of each recurrent sequence by 10x.
 # Metrics include full-sequence and first-step localization errors.
 # Fresh models use rl-baselines3-zoo/conf/maze_pi.yml unless --config-path overrides it.
+# Offline optimizer defaults to Adam; use --optimizer adamw/rmsprop/sgd,
+# --weight-decay, and --momentum for SGD/RMSprop when needed.
 # eval-every-epochs controls probe frequency.
 # eval-artifact-every-epochs writes decoded-vs-target localization visualizations.
 # eval-gridscore-every-epochs writes bottleneck ratemap/SAC/grid-score visualizations.

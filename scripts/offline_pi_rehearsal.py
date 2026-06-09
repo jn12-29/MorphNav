@@ -43,6 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--optimizer", choices=offline_pi_optimizer_names(), default="adam")
     parser.add_argument("--weight-decay", type=float, default=0.0)
     parser.add_argument("--momentum", type=float, default=0.0)
+    parser.add_argument("--max-grad-norm", type=float, default=0.5)
     parser.add_argument("--first-step-loss-weight", type=float, default=10.0)
     parser.add_argument("--batch-size-sequences", type=int, default=16)
     parser.add_argument("--max-seq-len", type=int, default=1000)
@@ -165,6 +166,8 @@ def _validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) ->
         parser.error("--momentum must be >= 0")
     if args.optimizer in {"adam", "adamw"} and args.momentum != 0.0:
         parser.error("--momentum is only supported with --optimizer sgd or --optimizer rmsprop")
+    if args.max_grad_norm < 0.0:
+        parser.error("--max-grad-norm must be >= 0")
     if args.first_step_loss_weight <= 0.0:
         parser.error("--first-step-loss-weight must be > 0")
     if args.max_seq_len is not None and args.max_seq_len <= 0:

@@ -19,6 +19,7 @@ python scripts/generate_pointmaze_dataset.py \
 # Fresh models use rl-baselines3-zoo/conf/maze_pi.yml unless --config-path overrides it.
 # Offline optimizer defaults to Adam; use --optimizer adamw/rmsprop/sgd,
 # --weight-decay, and --momentum for SGD/RMSprop when needed.
+# Offline PI grad clipping defaults to --max-grad-norm 0.5; pass 0.0 to disable.
 # eval-every-epochs controls probe frequency.
 # eval-artifact-every-epochs writes decoded-vs-target localization visualizations.
 # eval-gridscore-every-epochs writes bottleneck ratemap/SAC/grid-score visualizations.

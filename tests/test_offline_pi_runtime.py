@@ -4,6 +4,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
 import torch as th
 
 from components.offline_pi_runtime import (
@@ -17,12 +18,13 @@ from components.offline_pi_runtime import (
 from components.offline_pi_workflow import (
     _event_epoch_metrics,
     _first_step_loss_weight,
+    _max_grad_norm,
     _offline_pi_optimizer_kwargs,
     _optimizer_name,
     run_offline_pi_workflow,
 )
 from components.pi_algo import PathIntegrationRecurrentPPO
-from scripts.offline_pi_rehearsal import PI_ZOO_CONFIG_PATH, build_parser
+from scripts.offline_pi_rehearsal import PI_ZOO_CONFIG_PATH, _validate_args, build_parser
 
 
 def test_run_dirs_jsonl_and_atomic_json_contract(tmp_path: Path):
@@ -169,6 +171,7 @@ def test_workflow_config_records_tensorboard_dependency_fallback(tmp_path: Path)
     assert config["weight_decay"] == 0.0
     assert config["momentum"] == 0.0
     assert config["optimizer_kwargs"] == {"weight_decay": 0.0}
+    assert config["max_grad_norm"] == 0.5
 
 
 def test_epoch_event_samples_seen_is_cumulative():
@@ -215,6 +218,34 @@ def test_offline_pi_cli_first_step_loss_weight_default():
     args = parser.parse_args(["--dataset-root", "data/datasets/pointmaze/phase1_pi/rehearsal_seed0"])
 
     assert args.first_step_loss_weight == 10.0
+
+
+def test_offline_pi_cli_max_grad_norm_default_zero_and_validation():
+    parser = build_parser()
+
+    default_args = parser.parse_args(["--dataset-root", "data/datasets/pointmaze/phase1_pi/rehearsal_seed0"])
+    disabled_args = parser.parse_args(
+        [
+            "--dataset-root",
+            "data/datasets/pointmaze/phase1_pi/rehearsal_seed0",
+            "--max-grad-norm",
+            "0.0",
+        ]
+    )
+    negative_args = parser.parse_args(
+        [
+            "--dataset-root",
+            "data/datasets/pointmaze/phase1_pi/rehearsal_seed0",
+            "--max-grad-norm",
+            "-0.1",
+        ]
+    )
+
+    assert default_args.max_grad_norm == 0.5
+    assert disabled_args.max_grad_norm == 0.0
+    with pytest.raises(SystemExit) as exc_info:
+        _validate_args(parser, negative_args)
+    assert exc_info.value.code == 2
 
 
 def test_offline_pi_cli_optimizer_defaults_and_choices():
@@ -269,6 +300,10 @@ def test_offline_pi_cli_optimizer_defaults_and_choices():
 
 def test_offline_pi_workflow_first_step_loss_weight_fallback():
     assert _first_step_loss_weight(SimpleNamespace()) == 10.0
+
+
+def test_offline_pi_workflow_max_grad_norm_fallback():
+    assert _max_grad_norm(SimpleNamespace()) == 0.5
 
 
 def test_online_pi_algo_first_step_loss_weight_default():
@@ -411,6 +446,7 @@ def test_workflow_train_passes_offline_optimizer_settings(tmp_path: Path):
         optimizer="adamw",
         weight_decay=0.02,
         momentum=0.0,
+        max_grad_norm=0.25,
         first_step_loss_weight=10.0,
         batch_size_sequences=2,
         max_seq_len=None,
@@ -453,8 +489,10 @@ def test_workflow_train_passes_offline_optimizer_settings(tmp_path: Path):
     train_mock.assert_called_once()
     assert train_mock.call_args.kwargs["optimizer_cls"] is th.optim.AdamW
     assert train_mock.call_args.kwargs["optimizer_kwargs"] == {"weight_decay": 0.02}
+    assert train_mock.call_args.kwargs["max_grad_norm"] == 0.25
     config = json.loads((tmp_path / "run" / "config.json").read_text(encoding="utf-8"))
     assert config["optimizer"] == "adamw"
     assert config["weight_decay"] == 0.02
     assert config["momentum"] == 0.0
     assert config["optimizer_kwargs"] == {"weight_decay": 0.02}
+    assert config["max_grad_norm"] == 0.25

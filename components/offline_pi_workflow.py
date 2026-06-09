@@ -76,6 +76,10 @@ def _offline_pi_optimizer_kwargs(args: Any) -> dict[str, float]:
     return kwargs
 
 
+def _max_grad_norm(args: Any) -> float:
+    return float(getattr(args, "max_grad_norm", 0.5))
+
+
 def _effective_config(
     args: Any,
     *,
@@ -104,6 +108,7 @@ def _effective_config(
         "weight_decay": _optimizer_weight_decay(args),
         "momentum": _optimizer_momentum(args),
         "optimizer_kwargs": _offline_pi_optimizer_kwargs(args),
+        "max_grad_norm": _max_grad_norm(args),
         "first_step_loss_weight": _first_step_loss_weight(args),
         "batch_size_sequences": args.batch_size_sequences,
         "max_seq_len": args.max_seq_len,
@@ -459,6 +464,7 @@ def _run_train(
         max_updates=args.max_updates,
         n_epochs=args.epochs,
         seed=args.seed,
+        max_grad_norm=_max_grad_norm(args),
         first_step_loss_weight=_first_step_loss_weight(args),
         on_epoch_start=on_epoch_start,
         on_update=on_update,

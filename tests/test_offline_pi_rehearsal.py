@@ -467,6 +467,88 @@ def test_rehearsal_rejects_policy_optimizer(tmp_path: Path):
         )
 
 
+def test_rehearsal_rejects_negative_max_grad_norm(tmp_path: Path):
+    policy = _make_policy()
+    model = SimpleNamespace(policy=policy)
+
+    with pytest.raises(ValueError, match="max_grad_norm must be non-negative"):
+        run_offline_pi_rehearsal(
+            model,
+            tmp_path,
+            max_grad_norm=-0.1,
+        )
+
+
+def test_rehearsal_clips_offline_optimizer_params_by_default(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    dataset_root = _write_dataset(tmp_path)
+    policy = _make_policy()
+    model = SimpleNamespace(policy=policy)
+    optimizer = make_offline_pi_optimizer(policy, lr=1e-2)
+    expected_param_ids = {id(param) for group in optimizer.param_groups for param in group["params"]}
+    policy_param_ids = {id(param) for param in policy.parameters()}
+    events: list[str] = []
+    calls: list[tuple[list[th.nn.Parameter], float]] = []
+    real_step = optimizer.step
+
+    def fake_clip_grad_norm_(params, max_norm):
+        params = list(params)
+        assert any(param.grad is not None for param in params)
+        events.append("clip")
+        calls.append((params, max_norm))
+        return th.tensor(0.0)
+
+    def fake_step(*args, **kwargs):
+        assert events == ["clip"]
+        events.append("step")
+        return real_step(*args, **kwargs)
+
+    monkeypatch.setattr(th.nn.utils, "clip_grad_norm_", fake_clip_grad_norm_)
+    monkeypatch.setattr(optimizer, "step", fake_step)
+
+    run_offline_pi_rehearsal(
+        model,
+        dataset_root,
+        optimizer=optimizer,
+        batch_size_sequences=2,
+        max_seq_len=2,
+        max_updates=1,
+        seed=0,
+    )
+
+    assert len(calls) == 1
+    assert events == ["clip", "step"]
+    clipped_params, max_norm = calls[0]
+    assert max_norm == 0.5
+    assert {id(param) for param in clipped_params} == expected_param_ids
+    assert expected_param_ids < policy_param_ids
+
+
+def test_rehearsal_max_grad_norm_zero_disables_clipping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    dataset_root = _write_dataset(tmp_path)
+    policy = _make_policy()
+    model = SimpleNamespace(policy=policy)
+    calls = 0
+
+    def fake_clip_grad_norm_(params, max_norm):
+        nonlocal calls
+        calls += 1
+        return th.tensor(0.0)
+
+    monkeypatch.setattr(th.nn.utils, "clip_grad_norm_", fake_clip_grad_norm_)
+
+    run_offline_pi_rehearsal(
+        model,
+        dataset_root,
+        batch_size_sequences=2,
+        max_seq_len=2,
+        max_updates=1,
+        seed=0,
+        max_grad_norm=0.0,
+    )
+
+    assert calls == 0
+
+
 def test_rehearsal_updates_pi_path_but_not_action_or_value_heads(tmp_path: Path):
     dataset_root = _write_dataset(tmp_path)
     policy = _make_policy()

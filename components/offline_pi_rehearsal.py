@@ -493,6 +493,10 @@ def _record_metrics(logger: Any | None, metrics: dict[str, float]) -> None:
             record(key, value)
 
 
+def _optimizer_params(optimizer: th.optim.Optimizer) -> list[th.nn.Parameter]:
+    return [param for group in optimizer.param_groups for param in group["params"]]
+
+
 def run_offline_pi_rehearsal(
     model: Any,
     dataset_root: str | Path,
@@ -507,12 +511,15 @@ def run_offline_pi_rehearsal(
     n_epochs: int = 1,
     shuffle: bool = True,
     seed: int | None = None,
+    max_grad_norm: float = 0.5,
     first_step_loss_weight: float = 10.0,
     logger: Any | None = None,
     on_epoch_start: Callable[[dict[str, Any]], None] | None = None,
     on_update: Callable[[dict[str, Any]], None] | None = None,
     on_epoch_end: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, float]:
+    if max_grad_norm < 0.0:
+        raise ValueError("max_grad_norm must be non-negative")
     if first_step_loss_weight <= 0.0:
         raise ValueError("first_step_loss_weight must be positive")
     policy: PathIntegrationRecurrentActorCriticPolicy = model.policy
@@ -525,6 +532,7 @@ def run_offline_pi_rehearsal(
         optimizer_cls=optimizer_cls,
         **(optimizer_kwargs or {}),
     )
+    offline_optimizer_params = _optimizer_params(offline_optimizer)
     n_lstm_layers, lstm_hidden_size = _policy_lstm_shape(policy)
 
     metric_rows: list[dict[str, float]] = []
@@ -555,6 +563,8 @@ def run_offline_pi_rehearsal(
                 first_step_loss_weight=first_step_loss_weight,
             )
             loss.backward()
+            if max_grad_norm > 0.0:
+                th.nn.utils.clip_grad_norm_(offline_optimizer_params, max_grad_norm)
             offline_optimizer.step()
             metric_rows.append(metrics)
             epoch_rows.append(metrics)

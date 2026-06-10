@@ -15,6 +15,7 @@ The workflow must record the effective run configuration, stream useful training
 - Training objective: keep the existing place-cell cross-entropy objective.
 - Localization metrics: report decoded coordinate metrics from place-cell probabilities.
 - Representation analysis: keep the standalone `scripts/analyze_offline_pi_representations.py` workflow and add an explicit opt-in path that runs bottleneck grid-score analysis during probe evaluation.
+- Trajectory rendering: keep `scripts/render_pointmaze_trajectory.py` as an explicit offline analysis command for dataset replay, probe prediction videos, and recurrent-policy rollout videos.
 
 Out of scope:
 
@@ -22,7 +23,7 @@ Out of scope:
 - Changing dataset schema or collection behavior.
 - Replacing the SB3 model save format.
 - Making grid-score, spatial autocorrelogram, head-direction tuning, or shuffle-significance statistics part of default offline PI training.
-- Default MP4 generation.
+- Automatic default MP4 generation during training.
 
 ## Run Directory Contract
 
@@ -52,6 +53,16 @@ runs/offline_pi/<run-name>/
       gridscore_data.npz
       top_grid_cells.png
       spatial_ratemaps_grid.png
+  analysis/
+    renders/
+      <dataset-root-name>/
+        episode_XXXXXX.mp4
+        episode_XXXXXX.npz
+        episode_XXXXXX.json
+      rollout_seed<seed>/
+        rollout_seed<seed>_steps<steps>.mp4
+        rollout_seed<seed>_steps<steps>.npz
+        rollout_seed<seed>_steps<steps>.json
 ```
 
 `offline_pi_metrics.json` remains the final compact summary for compatibility with existing users and scripts. `metrics.jsonl` is the append-only event stream for progress, epoch summaries, probe summaries, and checkpoint events.

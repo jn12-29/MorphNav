@@ -17,6 +17,7 @@ Core commitments:
 
 - `offline_pi_rehearsal` performs PI-only updates on the current RL model with a separate optimizer.
 - `offline_pi_probe` evaluates held-out PI performance without parameter updates.
+- `render_pointmaze_trajectory` provides explicit MP4/NPZ/JSON analysis renders for dataset replay, offline PI probe predictions, and recurrent-policy rollouts.
 - `obs/*` dataset arrays are action-before policy observations aligned with `step/action`.
 - `achieved_goal` remains in observations as the PI target; `achieved_goal` is dropped from per-step policy features, while `start_pos` stays in per-step policy features and seeds LSTM initial states through `pi_init_state_key='start_pos'`.
 - `path_integration_head` and PI initial-state projection layers must be included in the online PPO optimizer parameter set.

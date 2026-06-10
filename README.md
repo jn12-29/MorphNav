@@ -50,6 +50,17 @@ python scripts/analyze_pointmaze_dataset.py \
 
 By default, the validation command writes `dataset_distribution.json`, `occupancy.png`, `action_hist.png`, and `trajectory_preview.png` under `runs/offline_pi/pointmaze_phase1_seed0/analysis/datasets/<dataset-root-name>/`. Pass `--output-dir` to override that location.
 
+Render selected dataset episodes as 3D replay videos:
+
+```bash
+MUJOCO_GL=egl python scripts/render_pointmaze_trajectory.py \
+  --mode dataset \
+  --dataset-root data/datasets/pointmaze/phase1_pi/rehearsal_seed0 \
+  --episodes 0 1 2
+```
+
+By default, dataset replay writes MP4, NPZ, and JSON files under `runs/offline_pi/pointmaze_phase1_seed0/analysis/renders/<dataset-root-name>/`.
+
 ## Offline PI Rehearsal
 
 Offline rehearsal trains only the PI path of `pi_ppo_lstm` using weighted place-cell cross-entropy. The first timestep of each recurrent sequence uses `--first-step-loss-weight` and defaults to `10.0`. Full-sequence and first-step MSE are reported only as localization metrics.
@@ -102,6 +113,30 @@ python scripts/analyze_offline_pi_representations.py \
 ```
 
 By default, representation analysis writes under `<offline-pi-run>/analysis/representations/<dataset-root-name>/` and includes `analysis_config.json` with the source model, dataset, and analysis parameters. It uses the same grid-score implementation as probe-time eval. Pass `--output-dir` to override that location.
+
+Render decoded PI predictions on held-out dataset episodes:
+
+```bash
+MUJOCO_GL=egl python scripts/render_pointmaze_trajectory.py \
+  --mode probe \
+  --model-path runs/offline_pi/<run-name>/models/final_model.zip \
+  --dataset-root data/datasets/pointmaze/phase1_pi/probe_seed1 \
+  --episodes 0 1 2
+```
+
+By default, probe renders write under `<offline-pi-run>/analysis/renders/<dataset-root-name>/`. Each NPZ stores action-before `obs_xy`/`qvel`, dataset actions, post-action `step/qpos` as `post_action_qpos`, decoded `pred_xy`, and localization errors.
+
+Record a recurrent-policy rollout from an offline PI checkpoint:
+
+```bash
+MUJOCO_GL=egl python scripts/render_pointmaze_trajectory.py \
+  --mode rollout \
+  --model-path runs/offline_pi/<run-name>/models/final_model.zip \
+  --seed 0 \
+  --steps 1000
+```
+
+Offline PI-only checkpoints may have an untrained action policy, so rollout quality can be poor. The rollout renderer still writes MP4, NPZ, and JSON under `<offline-pi-run>/analysis/renders/rollout_seed<seed>/`. The NPZ stores policy actions, rewards, `terminated`/`truncated` flags, action-before `obs_xy`/`qvel`, `post_action_qpos`, `post_action_qvel`, decoded PI predictions, and localization errors.
 
 ## Train
 

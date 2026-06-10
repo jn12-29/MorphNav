@@ -15,3 +15,12 @@ python scripts/analyze_offline_pi_representations.py --model-path runs/offline_p
 
 # PointMaze dataset distribution validation before offline PI training
 python scripts/analyze_pointmaze_dataset.py --dataset-root data/datasets/pointmaze/phase1_pi/rehearsal_seed0
+
+# PointMaze dataset trajectory replay render
+MUJOCO_GL=egl python scripts/render_pointmaze_trajectory.py --mode dataset --dataset-root data/datasets/pointmaze/phase1_pi/rehearsal_seed0 --episodes 0 1 2 --output-dir runs/offline_pi/render_examples/dataset_replay_YYYYMMDD_HHMMSS
+
+# Offline PI decoded prediction render on held-out dataset episodes
+MUJOCO_GL=egl python scripts/render_pointmaze_trajectory.py --mode probe --model-path runs/offline_pi/pointmaze_phase1_seed0_YYYYMMDD_HHMMSS/models/final_model.zip --dataset-root data/datasets/pointmaze/phase1_pi/probe_seed1 --episodes 0 1 2 --output-dir runs/offline_pi/render_examples/probe_predictions_YYYYMMDD_HHMMSS
+
+# Recurrent policy rollout render from an offline PI checkpoint
+MUJOCO_GL=egl python scripts/render_pointmaze_trajectory.py --mode rollout --model-path runs/offline_pi/pointmaze_phase1_seed0_YYYYMMDD_HHMMSS/models/final_model.zip --seed 0 --steps 1000 --output-dir runs/offline_pi/render_examples/rollout_seed0_YYYYMMDD_HHMMSS

@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import sys
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -45,6 +46,7 @@ def test_offline_pi_representation_analysis_writes_run_association_config(tmp_pa
         max_steps=None,
         max_units=256,
         top_k=8,
+        gridscore_positive_activations=True,
         device="auto",
     )
 
@@ -54,3 +56,31 @@ def test_offline_pi_representation_analysis_writes_run_association_config(tmp_pa
     assert payload["model_path"] == "runs/offline_pi/run/models/final_model.zip"
     assert payload["dataset_root"] == "data/datasets/pointmaze/phase1_pi/probe_seed1"
     assert payload["bounds"] == [-1.0, 1.0, -2.0, 2.0]
+    assert payload["gridscore_positive_activations"] is True
+
+
+def test_offline_pi_representation_analysis_positive_activation_cli_and_forwarding():
+    parser = analyze_offline_pi_representations.build_parser()
+    default_args = parser.parse_args(["--model-path", "model.zip", "--dataset-root", "dataset"])
+    enabled_args = parser.parse_args(
+        [
+            "--model-path",
+            "model.zip",
+            "--dataset-root",
+            "dataset",
+            "--gridscore-positive-activations",
+        ]
+    )
+
+    assert default_args.gridscore_positive_activations is False
+    assert enabled_args.gridscore_positive_activations is True
+
+    env = SimpleNamespace(close=lambda: None)
+    with (
+        patch.object(analyze_offline_pi_representations, "_make_env", return_value=env),
+        patch.object(analyze_offline_pi_representations.PathIntegrationRecurrentPPO, "load", return_value=object()),
+        patch.object(analyze_offline_pi_representations, "compute_gridscore_analysis", return_value={}) as mocked,
+    ):
+        analyze_offline_pi_representations.run_analysis(enabled_args)
+
+    assert mocked.call_args.kwargs["gridscore_positive_activations"] is True

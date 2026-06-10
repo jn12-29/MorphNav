@@ -40,6 +40,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-steps", type=int, default=None)
     parser.add_argument("--max-units", type=int, default=256)
     parser.add_argument("--top-k", type=int, default=8)
+    parser.add_argument("--gridscore-positive-activations", action="store_true", default=False)
     parser.add_argument("--device", type=str, default="auto")
     return parser
 
@@ -63,6 +64,7 @@ def write_analysis_config(args: argparse.Namespace, output_dir: Path, bounds: tu
         "max_steps": args.max_steps,
         "max_units": args.max_units,
         "top_k": args.top_k,
+        "gridscore_positive_activations": bool(getattr(args, "gridscore_positive_activations", False)),
         "device": args.device,
     }
     (output_dir / "analysis_config.json").write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -87,6 +89,7 @@ def run_analysis(args: argparse.Namespace) -> dict:
             max_steps=args.max_steps,
             max_units=args.max_units,
             top_k=args.top_k,
+            gridscore_positive_activations=args.gridscore_positive_activations,
         )
     finally:
         env.close()

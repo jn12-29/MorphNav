@@ -14,6 +14,7 @@ from components.dataset_gen.pointmaze_config import (
 )
 from components.dataset_gen.pointmaze_zarr_writer import write_shard
 from components.offline_pi_eval_artifacts import export_probe_artifacts
+import components.offline_pi_gridscore as gridscore_module
 from components.offline_pi_gridscore import export_gridscore_artifacts
 from components.offline_pi_rehearsal import (
     _mean_metrics,
@@ -439,6 +440,7 @@ def test_export_gridscore_artifacts_writes_summary_data_and_plots(tmp_path: Path
     assert summary["max_steps"] == 5
     assert summary["max_units"] == 3
     assert summary["top_k"] == 2
+    assert summary["gridscore_positive_activations"] is False
     with np.load(output_dir / "gridscore_data.npz") as data:
         assert data["positions"].shape == (5, 2)
         assert data["activations"].shape == (5, 3)
@@ -449,6 +451,50 @@ def test_export_gridscore_artifacts_writes_summary_data_and_plots(tmp_path: Path
     assert (output_dir / "gridscore_summary.json").is_file()
     assert (output_dir / "top_grid_cells.png").is_file()
     assert (output_dir / "spatial_ratemaps_grid.png").is_file()
+
+
+def test_gridscore_positive_activations_clips_analysis_weights_and_preserves_raw(monkeypatch):
+    positions = np.asarray(
+        [
+            [0.5, 0.5],
+            [0.5, 0.5],
+            [1.5, 1.5],
+            [1.5, 1.5],
+        ],
+        dtype=np.float32,
+    )
+    activations = np.asarray(
+        [
+            [-2.0, 1.0],
+            [4.0, -3.0],
+            [-5.0, -6.0],
+            [7.0, 8.0],
+        ],
+        dtype=np.float32,
+    )
+    monkeypatch.setattr(
+        gridscore_module,
+        "collect_bottleneck_activity",
+        lambda *args, **kwargs: (positions, activations),
+    )
+
+    analysis = gridscore_module.compute_gridscore_analysis(
+        object(),
+        Path("unused"),
+        batch_size_sequences=1,
+        max_seq_len=1,
+        n_bins=2,
+        bounds=(0.0, 2.0, 0.0, 2.0),
+        max_units=None,
+        gridscore_positive_activations=True,
+    )
+
+    np.testing.assert_array_equal(analysis["activations"], activations)
+    assert analysis["summary"]["gridscore_positive_activations"] is True
+    assert analysis["ratemaps"][0, 0, 0] == pytest.approx(2.0)
+    assert analysis["ratemaps"][0, 1, 1] == pytest.approx(3.5)
+    assert analysis["ratemaps"][1, 0, 0] == pytest.approx(0.5)
+    assert analysis["ratemaps"][1, 1, 1] == pytest.approx(4.0)
 
 
 def test_rehearsal_rejects_policy_optimizer(tmp_path: Path):

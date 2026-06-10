@@ -20,6 +20,7 @@ class OnlinePIEvalVisualizationCallback(BaseCallback):
         max_units: int | None = None,
         top_k: int = 8,
         max_total_steps: int | None = None,
+        gridscore_positive_activations: bool = False,
         verbose: int = 0,
     ) -> None:
         super().__init__(verbose=verbose)
@@ -31,6 +32,7 @@ class OnlinePIEvalVisualizationCallback(BaseCallback):
         self.max_units = max_units
         self.top_k = int(top_k)
         self.max_total_steps = max_total_steps
+        self.gridscore_positive_activations = bool(gridscore_positive_activations)
 
     def _init_callback(self) -> None:
         self.output_root.mkdir(parents=True, exist_ok=True)
@@ -69,6 +71,7 @@ class OnlinePIEvalVisualizationCallback(BaseCallback):
                 max_units=self.max_units,
                 top_k=self.top_k,
                 max_total_steps=self.max_total_steps,
+                gridscore_positive_activations=self.gridscore_positive_activations,
             )
         except Exception as exc:
             if self.verbose > 0:

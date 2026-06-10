@@ -319,6 +319,16 @@ def test_offline_pi_cli_gridscore_defaults_off():
     assert args.gridscore_n_bins == 32
     assert args.gridscore_max_steps is None
     assert args.gridscore_top_k == 8
+    assert args.gridscore_positive_activations is False
+
+    enabled_args = parser.parse_args(
+        [
+            "--dataset-root",
+            "data/datasets/pointmaze/phase1_pi/rehearsal_seed0",
+            "--gridscore-positive-activations",
+        ]
+    )
+    assert enabled_args.gridscore_positive_activations is True
 
 
 def test_offline_pi_cli_config_path_defaults_and_override():
@@ -364,6 +374,7 @@ def test_workflow_probe_records_gridscore_metrics_and_summary(tmp_path: Path):
         gridscore_n_bins=8,
         gridscore_max_steps=16,
         gridscore_top_k=2,
+        gridscore_positive_activations=True,
         checkpoint_every_epochs=0,
         save_final_checkpoint=False,
         tensorboard=False,
@@ -415,6 +426,7 @@ def test_workflow_probe_records_gridscore_metrics_and_summary(tmp_path: Path):
 
     gridscore_mock.assert_called_once()
     assert gridscore_mock.call_args.kwargs["max_units"] is None
+    assert gridscore_mock.call_args.kwargs["gridscore_positive_activations"] is True
     probe_payload = json.loads((tmp_path / "run" / "metrics" / "probe_epoch_0000.json").read_text(encoding="utf-8"))
     assert probe_payload["offline_pi/probe/first_localization_mse"] == 0.5
     assert probe_payload["offline_pi/probe/gridscore/best"] == 0.25

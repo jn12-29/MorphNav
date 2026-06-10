@@ -60,6 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gridscore-n-bins", type=int, default=32)
     parser.add_argument("--gridscore-max-steps", type=int, default=None)
     parser.add_argument("--gridscore-top-k", type=int, default=8)
+    parser.add_argument("--gridscore-positive-activations", action="store_true", default=False)
     parser.add_argument("--checkpoint-every-epochs", type=int, default=0)
     parser.add_argument("--save-final-checkpoint", dest="save_final_checkpoint", action="store_true", default=True)
     parser.add_argument("--no-save-final-checkpoint", dest="save_final_checkpoint", action="store_false")

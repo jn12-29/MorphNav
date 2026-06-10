@@ -21,5 +21,6 @@ This file lists MorphNav-specific traps that agents tend to miss.
 - Offline PI localization logs include full-sequence `localization_*` metrics plus first-step `first_localization_*` metrics; first-step means timestep 0 of each recurrent sequence, not a separate raw `start_pos` target.
 - `scripts/pi.sh` default offline rehearsal commands enable both `--eval-artifact-every-epochs 1` and `--eval-gridscore-every-epochs 1`; keep those examples aligned with README when changing offline probe visualization cadence.
 - Offline PI probe-time grid-score analysis is opt-in through `--eval-gridscore-every-epochs`; keep `components/offline_pi_gridscore.py`, `scripts/analyze_offline_pi_representations.py`, README examples, metrics JSONL, and TensorBoard scalar names aligned when changing it.
+- `--gridscore-positive-activations` only ReLU-clips bottleneck activity for ratemap/SAC/grid-score computation; NPZ `activations`/`bottleneck` fields remain raw model outputs.
 - Keep `scripts/pi.sh` aligned with the standalone offline PI CLI and README examples.
 - Keep edits surgical and run the smallest relevant validation.

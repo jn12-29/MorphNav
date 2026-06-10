@@ -42,8 +42,8 @@ class _FakeModel:
         logits = -np.sum((target_xy[:, None, :] - centers[None, :, :]) ** 2, axis=-1) * 12.0
         bottleneck = np.stack(
             [
-                target_xy[:, 0],
-                target_xy[:, 1],
+                target_xy[:, 0] - 0.5,
+                target_xy[:, 1] - 0.5,
                 target_xy[:, 0] + target_xy[:, 1],
             ],
             axis=-1,
@@ -103,6 +103,26 @@ def test_export_online_pi_eval_visualization_writes_eval_artifacts(tmp_path):
     payload = json.loads((tmp_path / "pi_eval_summary.json").read_text(encoding="utf-8"))
     assert payload["target_key"] == "achieved_goal"
     assert payload["gridscore"]["unit_count"] == 3
+    assert payload["gridscore_positive_activations"] is False
+
+
+def test_export_online_pi_eval_positive_activations_preserves_raw_bottleneck(tmp_path):
+    summary = export_online_pi_eval_visualization(
+        _FakeModel(),
+        _FakeVecEnv(),
+        tmp_path,
+        n_eval_episodes=1,
+        n_bins=4,
+        top_k=2,
+        max_total_steps=8,
+        gridscore_positive_activations=True,
+    )
+
+    assert summary["gridscore_positive_activations"] is True
+    assert summary["gridscore"]["gridscore_positive_activations"] is True
+    with np.load(tmp_path / "pi_eval_data.npz") as data:
+        assert np.min(data["bottleneck"]) < 0.0
+        assert np.nanmin(data["ratemaps"]) >= 0.0
 
 
 def test_online_pi_eval_callback_defaults_to_model_pi_target_key(tmp_path):

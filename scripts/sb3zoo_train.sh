@@ -49,4 +49,5 @@ CUDA_VISIBLE_DEVICES=5 python ./rl-baselines3-zoo/train.py --algo aux_ppo_lstm -
 # Path-integration auxiliary PPO-LSTM (place-cell prediction branch, start_pos seeds LSTM state)
 # Offline Phase 1 PI rehearsal uses scripts/offline_pi_rehearsal.py with phase1_pointmaze_pi datasets and writes observable runs under runs/offline_pi/.
 # Online eval writes PI decoded trajectory, bottleneck ratemap, and SAC/grid-score artifacts for all bottleneck units under the SB3 run's pi_eval/ directory.
+# Add --gridscore-positive-activations to compute online eval grid scores from ReLU-clipped bottleneck activity.
 CUDA_VISIBLE_DEVICES=0 python ./rl-baselines3-zoo/train.py --algo pi_ppo_lstm --env PointMaze -conf ./rl-baselines3-zoo/conf/maze_pi.yml --vec-env subproc -P --log-folder runs/sb3 --tensorboard-log runs/tensorboard/sb3 --eval-freq 10_000 --eval-episodes 32 --n-eval-envs 8 --save-freq 100_000 --env-kwargs continuing_task:False achieved_goal_aware:True target_aware:True sensor_aware:True start_pos_aware:True maze_map_name:"'OPEN'" xml_file_path:"'/home/xh/ai4neuron/MorphNav/envs/assets/point_v1.xml'" success_radius:0.4 --hyperparams n_timesteps:1e7

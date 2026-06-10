@@ -278,6 +278,7 @@ def compute_gridscore_analysis(
     max_steps: int | None = None,
     max_units: int | None = 256,
     top_k: int = 8,
+    gridscore_positive_activations: bool = False,
 ) -> dict[str, Any]:
     positions, activations = collect_bottleneck_activity(
         model,
@@ -287,8 +288,9 @@ def compute_gridscore_analysis(
         max_steps=max_steps,
         max_units=max_units,
     )
+    gridscore_activations = np.maximum(activations, 0.0) if gridscore_positive_activations else activations
     resolved_bounds = resolve_gridscore_bounds(positions, bounds)
-    ratemaps = compute_spatial_ratemaps(positions, activations, n_bins=n_bins, bounds=resolved_bounds)
+    ratemaps = compute_spatial_ratemaps(positions, gridscore_activations, n_bins=n_bins, bounds=resolved_bounds)
     autocorrs, grid_scores = analyze_grid_scores(ratemaps)
     summary = summarize_grid_scores(
         positions,
@@ -299,6 +301,7 @@ def compute_gridscore_analysis(
         max_units=max_units,
         top_k=top_k,
     )
+    summary["gridscore_positive_activations"] = bool(gridscore_positive_activations)
     return {
         "positions": positions,
         "activations": activations,
@@ -355,6 +358,7 @@ def export_gridscore_artifacts(
     max_steps: int | None = None,
     max_units: int | None = 256,
     top_k: int = 8,
+    gridscore_positive_activations: bool = False,
 ) -> dict[str, Any]:
     analysis = compute_gridscore_analysis(
         model,
@@ -366,6 +370,7 @@ def export_gridscore_artifacts(
         max_steps=max_steps,
         max_units=max_units,
         top_k=top_k,
+        gridscore_positive_activations=gridscore_positive_activations,
     )
     save_gridscore_analysis(
         analysis,

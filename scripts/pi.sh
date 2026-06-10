@@ -23,6 +23,7 @@ python scripts/generate_pointmaze_dataset.py \
 # eval-every-epochs controls probe frequency.
 # eval-artifact-every-epochs writes decoded-vs-target localization visualizations.
 # eval-gridscore-every-epochs writes bottleneck ratemap/SAC/grid-score visualizations.
+# Add --gridscore-positive-activations to compute grid scores from ReLU-clipped bottleneck activity.
 CUDA_VISIBLE_DEVICES=4 conda run -n mz python scripts/offline_pi_rehearsal.py \
   --mode train \
   --dataset-root data/datasets/pointmaze/phase1_pi/rehearsal_seed0 \

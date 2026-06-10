@@ -250,6 +250,7 @@ def export_online_pi_eval_visualization(
     max_units: int | None = None,
     top_k: int = 8,
     max_total_steps: int | None = None,
+    gridscore_positive_activations: bool = False,
 ) -> dict[str, Any]:
     output_dir.mkdir(parents=True, exist_ok=True)
     episodes = collect_online_pi_eval(
@@ -262,8 +263,9 @@ def export_online_pi_eval_visualization(
     )
     target_xy, pred_xy, bottleneck = _flatten_episodes(episodes)
     activations = bottleneck if max_units is None else bottleneck[:, :max_units]
+    gridscore_activations = np.maximum(activations, 0.0) if gridscore_positive_activations else activations
     resolved_bounds = resolve_gridscore_bounds(target_xy, bounds)
-    ratemaps = compute_spatial_ratemaps(target_xy, activations, n_bins=n_bins, bounds=resolved_bounds)
+    ratemaps = compute_spatial_ratemaps(target_xy, gridscore_activations, n_bins=n_bins, bounds=resolved_bounds)
     autocorrs, grid_scores = analyze_grid_scores(ratemaps)
     grid_summary = summarize_grid_scores(
         target_xy,
@@ -274,12 +276,14 @@ def export_online_pi_eval_visualization(
         max_units=max_units,
         top_k=top_k,
     )
+    grid_summary["gridscore_positive_activations"] = bool(gridscore_positive_activations)
     summary = {
         "num_episodes": int(len(episodes)),
         "episode_lengths": [int(episode["target_xy"].shape[0]) for episode in episodes],
         "num_steps": int(target_xy.shape[0]),
         "target_key": target_key,
         "bounds": [float(value) for value in resolved_bounds],
+        "gridscore_positive_activations": bool(gridscore_positive_activations),
         "localization": _localization_summary(pred_xy, target_xy),
         "gridscore": grid_summary,
     }
@@ -288,7 +292,7 @@ def export_online_pi_eval_visualization(
         output_dir / "pi_eval_data.npz",
         target_xy=target_xy,
         pred_xy=pred_xy,
-        bottleneck=activations,
+        bottleneck=bottleneck,
         ratemaps=ratemaps,
         autocorrs=autocorrs,
         grid_scores=grid_scores,

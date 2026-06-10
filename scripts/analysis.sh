@@ -10,7 +10,7 @@ python tests/analyze_rollout_data.py --plot-mode sample --max-display 64 --data-
 # 可视化轨迹比较
 python tests/analyze_pos_data.py --data-dir runs/sb3/aux_ppo_lstm/PointMaze_6/rollouts/best/data
 
-# Offline PI bottleneck grid-score analysis example
+# Offline PI bottleneck grid-score analysis example. Add --gridscore-positive-activations to clip negative activity for grid-score computation.
 python scripts/analyze_offline_pi_representations.py --model-path runs/offline_pi/pointmaze_phase1_seed0_YYYYMMDD_HHMMSS/models/final_model.zip --dataset-root data/datasets/pointmaze/phase1_pi/probe_seed1 --max-seq-len 1000
 
 # PointMaze dataset distribution validation before offline PI training

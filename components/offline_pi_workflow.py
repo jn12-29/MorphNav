@@ -126,6 +126,7 @@ def _effective_config(
         "gridscore_n_bins": args.gridscore_n_bins,
         "gridscore_max_steps": args.gridscore_max_steps,
         "gridscore_top_k": args.gridscore_top_k,
+        "gridscore_positive_activations": _gridscore_positive_activations(args),
         "checkpoint_every_epochs": args.checkpoint_every_epochs,
         "save_final_checkpoint": args.save_final_checkpoint,
         "fresh_model_config_path": fresh_model_config_path,
@@ -191,6 +192,10 @@ def _should_export_gridscore(args: Any, epoch: int) -> bool:
     return args.eval_gridscore_every_epochs > 0 and epoch % args.eval_gridscore_every_epochs == 0
 
 
+def _gridscore_positive_activations(args: Any) -> bool:
+    return bool(getattr(args, "gridscore_positive_activations", False))
+
+
 def _gridscore_output_dir(eval_dir: Path, epoch: int) -> Path:
     return eval_dir / f"gridscore_epoch_{epoch:04d}"
 
@@ -247,6 +252,7 @@ def _run_probe(
             max_steps=args.gridscore_max_steps,
             max_units=None,
             top_k=args.gridscore_top_k,
+            gridscore_positive_activations=_gridscore_positive_activations(args),
         )
         metrics.update(gridscore_metrics_from_summary(gridscore_summary, seconds=time.time() - gridscore_started))
     write_json_atomic(_probe_epoch_path(dirs["metrics"], epoch), metrics)
